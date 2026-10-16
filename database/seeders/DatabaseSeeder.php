@@ -3,23 +3,22 @@
 namespace Database\Seeders;
 
 use App\Models\User;
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
+use App\Support\Roles;
 use Illuminate\Database\Seeder;
 
+/** LOCAL DEVELOPMENT ONLY: one account per role, password "password". Never run in production. */
 class DatabaseSeeder extends Seeder
 {
-    use WithoutModelEvents;
-
-    /**
-     * Seed the application's database.
-     */
     public function run(): void
     {
-        // User::factory(10)->create();
+        if (app()->environment('production')) {
+            $this->command?->error('Refusing to seed demo users in production.');
 
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+            return;
+        }
+        foreach (Roles::ALL as $role) {
+            User::query()->updateOrCreate(['email' => "{$role}@media.test"], ['name' => ucfirst($role).' Demo', 'password' => 'password', 'role' => $role, 'status' => 'active']);
+        }
+        $this->call(DemoContentSeeder::class);
     }
 }
