@@ -4,6 +4,7 @@ import LoginPage from '@/pages/LoginPage';
 import DashboardPage from '@/pages/DashboardPage';
 import UsersPage from '@/pages/admin/UsersPage';
 import AuditPage from '@/pages/admin/AuditPage';
+import UploadPage from '@/pages/UploadPage';
 
 const guard = (ability: string, el: React.ReactNode) => <RequireAbility ability={ability}>{el}</RequireAbility>;
 
@@ -13,6 +14,7 @@ export const routes = [
         element: <AppLayout />,
         children: [
             { path: '/', element: <DashboardPage /> },
+            { path: '/upload', element: guard('assets.upload', <UploadPage />) },
             { path: '/admin/users', element: guard('users.manage', <UsersPage />) },
             { path: '/admin/audit', element: guard('audit.view', <AuditPage />) },
             { path: '*', element: <p className="text-sm text-neutral-500">Page not found.</p> },

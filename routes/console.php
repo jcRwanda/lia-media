@@ -1,8 +1,13 @@
 <?php
 
-use Illuminate\Foundation\Inspiring;
+use App\Services\UploadService;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Schedule;
 
-Artisan::command('inspire', function () {
-    $this->comment(Inspiring::quote());
-})->purpose('Display an inspiring quote');
+Artisan::command('uploads:prune', function (UploadService $uploads) {
+    $this->info($uploads->pruneExpired().' expired upload session(s) aborted.');
+})->purpose('Abort expired upload sessions (frees incomplete multipart parts in R2)');
+
+// No supervisor on the host: cron runs `schedule:run` every minute and the scheduler drains the database queue.
+Schedule::command('queue:work database --stop-when-empty --max-time=50 --tries=3')->everyMinute()->withoutOverlapping(5)->runInBackground();
+Schedule::command('uploads:prune')->hourly();
