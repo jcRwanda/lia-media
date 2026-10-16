@@ -34,6 +34,25 @@ class S3CompatibleUploadTest extends TestCase
         $this->s3->client()->createBucket(['Bucket' => $cfg['bucket']]);
         $this->app->instance(ObjectStorage::class, $this->s3);
         $this->http = new Client(['http_errors' => false]);
+        $this->bucket = $cfg['bucket'];
+    }
+
+    private string $bucket = '';
+
+    /** Remove the throwaway bucket so repeated runs don't exhaust the local server's volumes. */
+    protected function tearDown(): void
+    {
+        if ($this->bucket) {
+            $c = $this->s3->client();
+            foreach ($c->listObjectsV2(['Bucket' => $this->bucket])['Contents'] ?? [] as $o) {
+                $c->deleteObject(['Bucket' => $this->bucket, 'Key' => $o['Key']]);
+            }
+            foreach ($c->listMultipartUploads(['Bucket' => $this->bucket])['Uploads'] ?? [] as $u) {
+                $c->abortMultipartUpload(['Bucket' => $this->bucket, 'Key' => $u['Key'], 'UploadId' => $u['UploadId']]);
+            }
+            $c->deleteBucket(['Bucket' => $this->bucket]);
+        }
+        parent::tearDown();
     }
 
     public function test_single_put_with_signed_checksum_then_reject_tampered(): void
