@@ -4,6 +4,11 @@ use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\AlbumController;
 use App\Http\Controllers\Api\AssetController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\ConsentController;
+use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\PublicationController;
+use App\Http\Controllers\Api\ReviewController;
+use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\TaxonomyController;
 use App\Http\Controllers\Api\DerivativeController;
 use App\Http\Controllers\Api\LookupController;
@@ -52,6 +57,36 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
         Route::post('/albums/{album}/assets', [AlbumController::class, 'addAssets']);
         Route::delete('/albums/{album}/assets/{asset}', [AlbumController::class, 'removeAsset']);
         Route::put('/albums/{album}/order', [AlbumController::class, 'reorder']);
+    });
+    Route::middleware('can:dashboard.view')->group(function () {
+        Route::get('/dashboard', [DashboardController::class, 'index']);
+        Route::get('/storage', [DashboardController::class, 'storage']);
+    });
+    Route::post('/storage/snapshot', [DashboardController::class, 'snapshot'])->middleware('can:settings.manage');
+    Route::middleware('can:settings.manage')->group(function () {
+        Route::get('/settings', [SettingsController::class, 'show']);
+        Route::patch('/settings', [SettingsController::class, 'update']);
+    });
+    // Each transition checks review.approve / review.publish itself.
+    Route::middleware('can:review.approve')->group(function () {
+        Route::post('/assets/{asset}/review', [ReviewController::class, 'update']);
+        Route::post('/review/bulk', [ReviewController::class, 'bulk']);
+    });
+    Route::middleware('can:library.view')->group(function () {
+        Route::get('/people', [ConsentController::class, 'people']);
+        Route::get('/publications', [PublicationController::class, 'index']);
+    });
+    Route::middleware('can:consent.manage')->group(function () {
+        Route::post('/people', [ConsentController::class, 'storePerson']);
+        Route::post('/people/{person}/consents', [ConsentController::class, 'storeConsent']);
+        Route::post('/consents/{consent}/withdraw', [ConsentController::class, 'withdraw']);
+        Route::post('/assets/{asset}/people', [ConsentController::class, 'linkPerson']);
+        Route::delete('/assets/{asset}/people/{person}', [ConsentController::class, 'unlinkPerson']);
+        Route::post('/assets/{asset}/consent-status', [ConsentController::class, 'setStatus']);
+    });
+    Route::middleware('can:publications.manage')->group(function () {
+        Route::post('/assets/{asset}/publications', [PublicationController::class, 'store']);
+        Route::delete('/publications/{publication}', [PublicationController::class, 'destroy']);
     });
     Route::middleware('can:shares.manage')->group(function () {
         Route::get('/shares', [ShareLinkController::class, 'index']);

@@ -11,6 +11,9 @@ import AlbumsPage from '@/pages/AlbumsPage';
 import AlbumPage from '@/pages/AlbumPage';
 import TaxonomyPage from '@/pages/TaxonomyPage';
 import SharesPage from '@/pages/shares/SharesPage';
+import ReviewQueuePage from '@/pages/review/ReviewQueuePage';
+import StoragePage from '@/pages/StoragePage';
+import SettingsPage from '@/pages/admin/SettingsPage';
 import VisitorGalleryPage from '@/pages/shares/VisitorGalleryPage';
 
 const guard = (ability: string, el: React.ReactNode) => <RequireAbility ability={ability}>{el}</RequireAbility>;
@@ -28,6 +31,9 @@ export const routes = [
             { path: '/albums/:uuid', element: guard('library.view', <AlbumPage />) },
             { path: '/taxonomy', element: guard('library.view', <TaxonomyPage />) },
             { path: '/shares', element: guard('shares.manage', <SharesPage />) },
+            { path: '/review', element: guard('review.approve', <ReviewQueuePage />) },
+            { path: '/storage', element: guard('dashboard.view', <StoragePage />) },
+            { path: '/admin/settings', element: guard('settings.manage', <SettingsPage />) },
             { path: '/upload', element: guard('assets.upload', <UploadPage />) },
             { path: '/admin/users', element: guard('users.manage', <UsersPage />) },
             { path: '/admin/audit', element: guard('audit.view', <AuditPage />) },

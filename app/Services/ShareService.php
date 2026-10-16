@@ -29,7 +29,7 @@ class ShareService
 
     public const CODE_ATTEMPTS_PER_LINK = 20;   // all IPs, per hour
 
-    public function __construct(private ObjectStorage $storage, private AuditLogger $audit, private AssetPresenter $present) {}
+    public function __construct(private ObjectStorage $storage, private AuditLogger $audit, private AssetPresenter $present, private SettingsService $settings) {}
 
     public static function newToken(): string
     {
@@ -67,7 +67,7 @@ class ShareService
                 'token_hash' => ShareLink::hashToken($token), 'shareable_type' => $target instanceof Album ? 'album' : 'asset', 'shareable_id' => $target->id,
                 'mode' => $d['mode'], 'access_code_hash' => $code ? Hash::make($code) : null, 'title' => $d['title'] ?? $target->title, 'message' => $d['message'] ?? null,
                 'allow_download' => (bool) ($d['allow_download'] ?? false), 'include_originals' => (bool) ($d['include_originals'] ?? false),
-                'expires_at' => array_key_exists('expires_at', $d) ? $d['expires_at'] : now()->addDays(30), 'max_uses' => $d['max_uses'] ?? null, 'created_by' => $actor->id,
+                'expires_at' => array_key_exists('expires_at', $d) ? $d['expires_at'] : now()->addDays((int) $this->settings->get('default_share_days')), 'max_uses' => $d['max_uses'] ?? null, 'created_by' => $actor->id,
             ]);
             $recipients = [];
             foreach (array_unique(array_map('strtolower', $d['recipients'] ?? [])) as $email) {
