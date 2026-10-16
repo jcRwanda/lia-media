@@ -14,6 +14,8 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->statefulApi();
+        // Share grant cookies hold a random secret whose hash is checked server-side; keep them readable on stateless API requests.
+        $middleware->encryptCookies(except: [\App\Services\ShareService::COOKIE]);
         $middleware->alias(['active' => \App\Http\Middleware\EnsureUserIsActive::class]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

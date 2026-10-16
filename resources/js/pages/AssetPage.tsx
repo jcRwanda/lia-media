@@ -15,6 +15,7 @@ import { api, fieldErrors } from '@/lib/api';
 import type { AssetDetail } from '@/lib/types';
 import { formatBytes, formatDate } from '@/lib/utils';
 import ReviewPanel from '@/pages/review/ReviewPanel';
+import ShareDialog from '@/pages/shares/ShareDialog';
 
 const schema = z.object({
     title: z.string().min(1, 'Title is required').max(190),
@@ -60,6 +61,7 @@ export default function AssetPage() {
                 <Link to="/library" className="inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-lia-700"><ArrowLeft className="h-4 w-4" />Library</Link>
                 <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">{a.title}</h1>
                 <ReviewBadge state={a.review_state} />
+                {can('shares.manage') ? <ShareDialog target={{ type: 'asset', uuid: a.uuid, title: a.title }} /> : null}
                 {can('assets.download_original') ? <Button size="sm" variant="secondary" onClick={() => download.mutate()} disabled={download.isPending}><Download className="h-4 w-4" />Original</Button> : null}
                 {can('assets.delete') ? <Button size="sm" variant="destructive" onClick={() => window.confirm('Move this asset to trash? The original stays in storage.') && del.mutate()}><Trash2 className="h-4 w-4" /></Button> : null}
             </div>

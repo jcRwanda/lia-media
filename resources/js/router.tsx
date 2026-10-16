@@ -10,11 +10,14 @@ import AssetPage from '@/pages/AssetPage';
 import AlbumsPage from '@/pages/AlbumsPage';
 import AlbumPage from '@/pages/AlbumPage';
 import TaxonomyPage from '@/pages/TaxonomyPage';
+import SharesPage from '@/pages/shares/SharesPage';
+import VisitorGalleryPage from '@/pages/shares/VisitorGalleryPage';
 
 const guard = (ability: string, el: React.ReactNode) => <RequireAbility ability={ability}>{el}</RequireAbility>;
 
 export const routes = [
     { path: '/login', element: <LoginPage /> },
+    { path: '/s/:token', element: <VisitorGalleryPage /> },
     {
         element: <AppLayout />,
         children: [
@@ -24,6 +27,7 @@ export const routes = [
             { path: '/albums', element: guard('library.view', <AlbumsPage />) },
             { path: '/albums/:uuid', element: guard('library.view', <AlbumPage />) },
             { path: '/taxonomy', element: guard('library.view', <TaxonomyPage />) },
+            { path: '/shares', element: guard('shares.manage', <SharesPage />) },
             { path: '/upload', element: guard('assets.upload', <UploadPage />) },
             { path: '/admin/users', element: guard('users.manage', <UsersPage />) },
             { path: '/admin/audit', element: guard('audit.view', <AuditPage />) },

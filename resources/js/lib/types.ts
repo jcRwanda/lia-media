@@ -111,3 +111,22 @@ export interface AlbumSummary {
     created_by: string | null;
     updated_at: string;
 }
+
+export interface ShareDto {
+    uuid: string;
+    mode: 'public' | 'access_code' | 'restricted';
+    title: string | null;
+    message: string | null;
+    allow_download: boolean;
+    include_originals: boolean;
+    expires_at: string | null;
+    max_uses: number | null;
+    use_count: number;
+    revoked_at: string | null;
+    last_accessed_at: string | null;
+    created_at: string;
+    created_by: string | null;
+    status: 'active' | 'expired' | 'revoked' | 'used_up';
+    target: { type: 'album' | 'asset'; uuid: string | null; title: string | null };
+    visible_count: number;
+}

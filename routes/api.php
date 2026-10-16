@@ -7,11 +7,20 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\TaxonomyController;
 use App\Http\Controllers\Api\DerivativeController;
 use App\Http\Controllers\Api\LookupController;
+use App\Http\Controllers\Api\PublicShareController;
+use App\Http\Controllers\Api\ShareLinkController;
 use App\Http\Controllers\Api\UploadController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:login');
+
+// Visitor share endpoints (no staff session).
+Route::middleware('throttle:share')->prefix('s/{token}')->where(['token' => '[A-Za-z0-9_-]{20,64}'])->group(function () {
+    Route::get('/', [PublicShareController::class, 'show']);
+    Route::post('/unlock', [PublicShareController::class, 'unlock']);
+    Route::post('/items/{asset}/download', [PublicShareController::class, 'download']);
+});
 
 Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function () {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
@@ -43,6 +52,15 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
         Route::post('/albums/{album}/assets', [AlbumController::class, 'addAssets']);
         Route::delete('/albums/{album}/assets/{asset}', [AlbumController::class, 'removeAsset']);
         Route::put('/albums/{album}/order', [AlbumController::class, 'reorder']);
+    });
+    Route::middleware('can:shares.manage')->group(function () {
+        Route::get('/shares', [ShareLinkController::class, 'index']);
+        Route::post('/shares', [ShareLinkController::class, 'store']);
+        Route::get('/shares/{share}', [ShareLinkController::class, 'show']);
+        Route::post('/shares/{share}/revoke', [ShareLinkController::class, 'revoke']);
+        Route::post('/shares/{share}/rotate', [ShareLinkController::class, 'rotate']);
+        Route::post('/shares/{share}/recipients', [ShareLinkController::class, 'addRecipient']);
+        Route::delete('/shares/{share}/recipients/{recipient}', [ShareLinkController::class, 'revokeRecipient'])->whereNumber('recipient');
     });
     Route::middleware('can:taxonomy.manage')->whereIn('type', ['projects', 'cohorts', 'events', 'categories'])->group(function () {
         Route::post('/taxonomy/{type}', [TaxonomyController::class, 'store']);
