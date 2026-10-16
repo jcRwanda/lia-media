@@ -46,3 +46,68 @@ export interface PresignedPut {
     url: string;
     headers: Record<string, string>;
 }
+
+export type ReviewState = 'unreviewed' | 'approved' | 'published' | 'restricted' | 'archived';
+
+export interface AssetCard {
+    uuid: string;
+    kind: 'image' | 'video' | 'audio' | 'document' | 'other';
+    title: string;
+    mime_type: string;
+    size_bytes: number;
+    width: number | null;
+    height: number | null;
+    duration_ms: number | null;
+    review_state: ReviewState;
+    consent_status: string;
+    storage_status: string;
+    created_at: string;
+    captured_at: string | null;
+    thumb_url: string | null;
+    position?: number;
+}
+
+export interface AssetDetail extends AssetCard {
+    description: string | null;
+    original_filename: string;
+    sha256: string;
+    credit: string | null;
+    project: { id: number; name: string } | null;
+    event: { id: number; title: string } | null;
+    cohort: { id: number; name: string } | null;
+    category: { id: number; name: string } | null;
+    project_id: number | null;
+    event_id: number | null;
+    cohort_id: number | null;
+    category_id: number | null;
+    tags: string[];
+    albums: { uuid: string; title: string }[];
+    uploader: string | null;
+    reviewer: string | null;
+    reviewed_at: string | null;
+    review_note: string | null;
+    metadata: Record<string, unknown> | null;
+    preview_url: string | null;
+    poster_url: string | null;
+    derivatives: { type: string; status: string; width: number; height: number; size_bytes: number }[];
+    people: { id: number; full_name: string; is_minor: boolean; consent_record_id: number | null }[];
+    publications: { id: number; channel: string; url: string | null; title: string | null; published_on: string; notes: string | null; recorded_by: string | null }[];
+    review_history: { from: string; to: string; note: string | null; actor: string | null; at: string }[];
+}
+
+export interface AlbumSummary {
+    uuid: string;
+    id: number;
+    title: string;
+    description: string | null;
+    project_id: number | null;
+    event_id: number | null;
+    cohort_id: number | null;
+    event: string | null;
+    project: string | null;
+    asset_count: number;
+    cover_url: string | null;
+    cover_uuid: string | null;
+    created_by: string | null;
+    updated_at: string;
+}

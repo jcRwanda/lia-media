@@ -18,4 +18,5 @@ class Event extends Model
 
     public function project(): BelongsTo { return $this->belongsTo(Project::class); }
     public function cohort(): BelongsTo { return $this->belongsTo(Cohort::class); }
+    public function assets(): HasMany { return $this->hasMany(Asset::class); }
 }
