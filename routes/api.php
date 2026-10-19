@@ -1,19 +1,19 @@
 <?php
 
-use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\AlbumController;
 use App\Http\Controllers\Api\AssetController;
+use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ConsentController;
 use App\Http\Controllers\Api\DashboardController;
-use App\Http\Controllers\Api\PublicationController;
-use App\Http\Controllers\Api\ReviewController;
-use App\Http\Controllers\Api\SettingsController;
-use App\Http\Controllers\Api\TaxonomyController;
 use App\Http\Controllers\Api\DerivativeController;
 use App\Http\Controllers\Api\LookupController;
+use App\Http\Controllers\Api\PublicationController;
 use App\Http\Controllers\Api\PublicShareController;
+use App\Http\Controllers\Api\ReviewController;
+use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\ShareLinkController;
+use App\Http\Controllers\Api\TaxonomyController;
 use App\Http\Controllers\Api\UploadController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
@@ -25,6 +25,8 @@ Route::middleware('throttle:share')->prefix('s/{token}')->where(['token' => '[A-
     Route::get('/', [PublicShareController::class, 'show']);
     Route::post('/unlock', [PublicShareController::class, 'unlock']);
     Route::post('/items/{asset}/download', [PublicShareController::class, 'download']);
+    Route::get('/items/{asset}/file', [PublicShareController::class, 'file']);
+    Route::post('/download', [PublicShareController::class, 'downloadZip']);
 });
 
 Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function () {

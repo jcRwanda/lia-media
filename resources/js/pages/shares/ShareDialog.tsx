@@ -41,7 +41,7 @@ export default function ShareDialog({ target }: { target: { type: 'album' | 'ass
     const [open, setOpen] = useState(false);
     const [created, setCreated] = useState<Created | null>(null);
     const qc = useQueryClient();
-    const form = useForm<Form>({ resolver: zodResolver(schema), defaultValues: { mode: 'access_code', title: target.title, message: '', access_code: '', expires_in_days: '30', max_uses: '', allow_download: false, include_originals: false, recipients: '' } });
+    const form = useForm<Form>({ resolver: zodResolver(schema), defaultValues: { mode: 'access_code', title: target.title, message: '', access_code: '', expires_in_days: '30', max_uses: '', allow_download: true, include_originals: false, recipients: '' } });
     const mode = form.watch('mode');
     const create = useMutation({
         mutationFn: (v: Form) => api<Created>('/shares', {

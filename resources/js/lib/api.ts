@@ -5,7 +5,7 @@ export class ApiError extends Error {
     }
 }
 
-function xsrf(): string | null {
+export function csrfToken(): string | null {
     const m = document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]+)/);
     return m ? decodeURIComponent(m[1]) : null;
 }
@@ -18,9 +18,9 @@ export function ensureCsrf(): Promise<void> {
 
 export async function api<T = unknown>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
     const method = (init.method || 'GET').toUpperCase();
-    if (method !== 'GET' && !xsrf()) await ensureCsrf();
+    if (method !== 'GET' && !csrfToken()) await ensureCsrf();
     const headers: Record<string, string> = { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest', ...(init.headers as Record<string, string>) };
-    const token = xsrf();
+    const token = csrfToken();
     if (token) headers['X-XSRF-TOKEN'] = token;
     let body = init.body;
     if (init.json !== undefined) {

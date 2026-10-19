@@ -9,12 +9,15 @@ use App\Models\ShareLink;
 use App\Models\ShareRecipient;
 use App\Models\User;
 use App\Storage\ObjectStorage;
+use App\Support\StreamingZip;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Share links. Tokens and access codes are stored only as hashes. Every visitor gets a short
@@ -66,7 +69,7 @@ class ShareService
             $link = ShareLink::query()->create([
                 'token_hash' => ShareLink::hashToken($token), 'shareable_type' => $target instanceof Album ? 'album' : 'asset', 'shareable_id' => $target->id,
                 'mode' => $d['mode'], 'access_code_hash' => $code ? Hash::make($code) : null, 'title' => $d['title'] ?? $target->title, 'message' => $d['message'] ?? null,
-                'allow_download' => (bool) ($d['allow_download'] ?? false), 'include_originals' => (bool) ($d['include_originals'] ?? false),
+                'allow_download' => (bool) ($d['allow_download'] ?? true), 'include_originals' => (bool) ($d['include_originals'] ?? false),
                 'expires_at' => array_key_exists('expires_at', $d) ? $d['expires_at'] : now()->addDays((int) $this->settings->get('default_share_days')), 'max_uses' => $d['max_uses'] ?? null, 'created_by' => $actor->id,
             ]);
             $recipients = [];
@@ -204,17 +207,99 @@ class ShareService
     public function downloadUrl(ShareLink $link, Asset $a, Request $request): string
     {
         abort_unless($link->allow_download, 403, 'Downloads are not enabled for this link.');
-        $ttl = config('media.ttl.download');
-        if ($link->include_originals) {
-            $url = $this->storage->presignGet($a->storage_key, $ttl, $a->original_filename, false);
-        } else {
-            $d = $a->derivatives->firstWhere('type', 'preview') ?? $a->derivatives->firstWhere('type', 'poster');
-            abort_unless($d && $d->status === 'ready', 404, 'No downloadable version yet.');
-            $url = $this->storage->presignGet($d->storage_key, $ttl, pathinfo($a->original_filename, PATHINFO_FILENAME).'-preview.'.pathinfo($d->storage_key, PATHINFO_EXTENSION), false);
-        }
+        $file = $this->downloadableFile($link, $a);
+        $url = $this->storage->presignGet($file['storage_key'], config('media.ttl.download'), $file['filename'], false);
         $this->audit->log('share.downloaded', $a, ['share' => $link->uuid, 'original' => $link->include_originals, 'ip' => $request->ip()], null, 'share_link');
 
         return $url;
+    }
+
+    /** Which bytes a visitor gets: the original, or the best ready derivative when originals are off. */
+    public function downloadableFile(ShareLink $link, Asset $a): array
+    {
+        if ($link->include_originals) {
+            return ['storage_key' => $a->storage_key, 'filename' => $a->original_filename, 'mime_type' => $a->mime_type];
+        }
+        $d = $a->derivatives->firstWhere('type', 'preview') ?? $a->derivatives->firstWhere('type', 'poster');
+        abort_unless($d && $d->status === 'ready', 404, 'No downloadable version yet.');
+
+        return [
+            'storage_key' => $d->storage_key,
+            'filename' => pathinfo($a->original_filename, PATHINFO_FILENAME).'-preview.'.pathinfo($d->storage_key, PATHINFO_EXTENSION),
+            'mime_type' => $d->mime_type,
+        ];
+    }
+
+    /** Subset of visible assets that currently have downloadable bytes (derivative not ready yet → skipped). */
+    public function downloadableAssets(ShareLink $link, Collection $assets): Collection
+    {
+        return $assets->filter(function (Asset $a) use ($link) {
+            if ($link->include_originals) {
+                return true;
+            }
+
+            return $a->derivatives->contains(fn ($d) => in_array($d->type, ['preview', 'poster'], true) && $d->status === 'ready');
+        })->values();
+    }
+
+    /**
+     * Stream a single file from storage over the app's own origin. Phones use this to build File
+     * objects for the Web Share API (a presigned bucket URL would need bucket CORS to be fetchable),
+     * and each call is audited like any other download.
+     */
+    public function fileStream(ShareLink $link, Asset $a, Request $request): StreamedResponse
+    {
+        abort_unless($link->allow_download, 403, 'Downloads are not enabled for this link.');
+        $file = $this->downloadableFile($link, $a);
+        $this->audit->log('share.downloaded', $a, ['share' => $link->uuid, 'original' => $link->include_originals, 'stream' => true, 'ip' => $request->ip()], null, 'share_link');
+
+        return $this->streamFile($file, ['Content-Type' => $file['mime_type'] ?: 'application/octet-stream']);
+    }
+
+    /** @param array{storage_key: string, filename: string, mime_type: ?string} $file */
+    private function streamFile(array $file, array $headers = []): StreamedResponse
+    {
+        $safe = str_replace(['"', "\r", "\n"], '', $file['filename']);
+
+        return response()->stream(function () use ($file) {
+            foreach ($this->storage->readChunks($file['storage_key']) as $chunk) {
+                echo $chunk;
+            }
+        }, 200, array_merge([
+            'Content-Disposition' => 'attachment; filename="'.$safe.'"',
+            'Cache-Control' => 'no-store, private',
+            'X-Robots-Tag' => 'noindex, nofollow',
+            'Referrer-Policy' => 'no-referrer',
+            // Never buffer on the proxy: the whole point is streaming.
+            'X-Accel-Buffering' => 'no',
+        ], $headers));
+    }
+
+    /**
+     * Stream the selected files as one zip, pulled from storage server-side (the visitor never
+     * receives presigned URLs for these bytes). Each included asset is audited like a single download.
+     */
+    public function zipDownload(ShareLink $link, Collection $assets, Request $request): StreamedResponse
+    {
+        $zipName = Str::slug($link->title ?: 'share').'-'.now()->format('Ymd-His').'.zip';
+
+        return response()->stream(function () use ($link, $assets, $request) {
+            $zip = new StreamingZip(fopen('php://output', 'wb'));
+            foreach ($assets as $a) {
+                $file = $this->downloadableFile($link, $a);
+                $zip->add($file['filename'], $this->storage->readChunks($file['storage_key']));
+                $this->audit->log('share.downloaded', $a, ['share' => $link->uuid, 'original' => $link->include_originals, 'zip' => true, 'ip' => $request->ip()], null, 'share_link');
+            }
+            $zip->finish();
+        }, 200, [
+            'Content-Type' => 'application/zip',
+            'Content-Disposition' => 'attachment; filename="'.$zipName.'"',
+            'Cache-Control' => 'no-store, private',
+            'X-Robots-Tag' => 'noindex, nofollow',
+            'Referrer-Policy' => 'no-referrer',
+            // Never buffer a zip on the proxy: the whole point is streaming.
+            'X-Accel-Buffering' => 'no',
+        ]);
     }
 
     public function staffPayload(ShareLink $l): array

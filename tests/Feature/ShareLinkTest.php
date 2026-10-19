@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\Api\PublicShareController;
 use App\Models\AccessGrant;
 use App\Models\Album;
 use App\Models\Asset;
@@ -15,6 +16,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Tests\Concerns\UsesFakeStorage;
 use Tests\TestCase;
+use ZipArchive;
 
 class ShareLinkTest extends TestCase
 {
@@ -76,9 +78,36 @@ class ShareLinkTest extends TestCase
         $this->fail('no grant cookie');
     }
 
+    /** Put known bytes for an asset's original and preview derivative into the fake bucket. */
+    private function seedBytes(Asset $asset, string $preview = 'PREVIEW'): void
+    {
+        $this->r2->simulatePut($asset->storage_key, "ORIG-{$asset->id}", 'image/jpeg');
+        $d = $asset->derivatives()->first();
+        if ($d) {
+            $this->r2->simulatePut($d->storage_key, "{$preview}-{$asset->id}", 'image/webp');
+        }
+    }
+
+    /** @return array<string, string> zip entry name => content, in archive order */
+    private function zipEntries(string $content): array
+    {
+        $path = tempnam(sys_get_temp_dir(), 'zip');
+        file_put_contents($path, $content);
+        $zip = new ZipArchive;
+        $this->assertTrue($zip->open($path));
+        $entries = [];
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $entries[$zip->getNameIndex($i)] = (string) $zip->getFromIndex($i);
+        }
+        $zip->close();
+        unlink($path);
+
+        return $entries;
+    }
+
     public function test_public_link_shows_only_approved_and_published_assets_with_short_lived_urls(): void
     {
-        $res = $this->make(['mode' => 'public']);
+        $res = $this->make(['mode' => 'public', 'allow_download' => false]);
         $token = $this->token($res['url']);
         $this->assertSame(hash('sha256', $token), ShareLink::first()->token_hash, 'only the hash is stored');
         $this->assertSame(2, $res['share']['visible_count']);
@@ -172,5 +201,111 @@ class ShareLinkTest extends TestCase
         $this->travel(2)->days();
         $this->visit('GET', '/api/s/'.$this->token($exp['url']))->assertStatus(410)->assertJsonPath('message', 'This link has expired.');
         $this->actingAs(User::factory()->role('management')->create())->getJson('/api/shares')->assertForbidden();
+    }
+
+    public function test_zip_download_streams_only_selected_visible_items_and_audits_each_one(): void
+    {
+        $res = $this->make(['mode' => 'public', 'allow_download' => true]);
+        $token = $this->token($res['url']);
+        $this->seedBytes($this->a['approved'], 'APPROVED');
+        $this->seedBytes($this->a['published'], 'PUBLISHED');
+        $this->seedBytes($this->a['unreviewed'], 'HIDDEN');
+        $cookie = $this->grantCookie($this->visit('GET', "/api/s/{$token}")->assertOk());
+
+        $r = $this->visit('POST', "/api/s/{$token}/download", ['items' => [
+            $this->a['approved']->uuid,
+            $this->a['published']->uuid,
+            $this->a['unreviewed']->uuid,
+            'not-a-real-uuid',
+        ]], $cookie);
+
+        $r->assertOk();
+        $this->assertSame('application/zip', $r->headers->get('Content-Type'));
+        $this->assertStringContainsString('attachment; filename=', (string) $r->headers->get('Content-Disposition'));
+        $this->assertStringContainsString('no-store', (string) $r->headers->get('Cache-Control'));
+        $this->assertSame([
+            pathinfo($this->a['approved']->original_filename, PATHINFO_FILENAME).'-preview.webp' => 'APPROVED-'.$this->a['approved']->id,
+            pathinfo($this->a['published']->original_filename, PATHINFO_FILENAME).'-preview.webp' => 'PUBLISHED-'.$this->a['published']->id,
+        ], $this->zipEntries($r->streamedContent()));
+        $downloads = AuditLog::query()->where('action', 'share.downloaded')->get();
+        $this->assertCount(2, $downloads);
+        $this->assertTrue($downloads->every(fn ($l) => $l->actor_type === 'share_link' && $l->properties['zip'] === true));
+        $this->assertEqualsCanonicalizing([$this->a['approved']->id, $this->a['published']->id], $downloads->pluck('subject_id')->all());
+    }
+
+    public function test_zip_download_requires_downloads_allowed_and_a_live_grant(): void
+    {
+        $res = $this->make(['mode' => 'public', 'allow_download' => false]);
+        $token = $this->token($res['url']);
+        $items = ['items' => [$this->a['approved']->uuid]];
+        $cookie = $this->grantCookie($this->visit('GET', "/api/s/{$token}")->assertOk()->assertJsonPath('share.allow_download', false));
+
+        $this->visit('POST', "/api/s/{$token}/download", $items, $cookie)->assertForbidden()->assertJsonPath('message', 'Downloads are not enabled for this link.');
+        $this->visit('POST', "/api/s/{$token}/download", $items)->assertUnauthorized();
+        $this->assertSame(0, AuditLog::query()->where('action', 'share.downloaded')->count());
+    }
+
+    public function test_zip_download_rejects_empty_oversized_and_fully_invisible_selections(): void
+    {
+        $res = $this->make(['mode' => 'public', 'allow_download' => true]);
+        $token = $this->token($res['url']);
+        $cookie = $this->grantCookie($this->visit('GET', "/api/s/{$token}")->assertOk());
+
+        $this->visit('POST', "/api/s/{$token}/download", ['items' => []], $cookie)->assertUnprocessable();
+        $this->visit('POST', "/api/s/{$token}/download", [], $cookie)->assertUnprocessable();
+        $this->visit('POST', "/api/s/{$token}/download", ['items' => array_fill(0, PublicShareController::MAX_ZIP_ITEMS + 1, 'x')], $cookie)->assertUnprocessable();
+        $this->visit('POST', "/api/s/{$token}/download", ['items' => [$this->a['unreviewed']->uuid]], $cookie)->assertNotFound();
+        $this->visit('POST', "/api/s/{$token}/download", ['items' => ['not-a-real-uuid']], $cookie)->assertNotFound();
+        $this->assertSame(0, AuditLog::query()->where('action', 'share.downloaded')->count());
+    }
+
+    public function test_zip_download_sends_original_bytes_when_the_link_includes_originals(): void
+    {
+        $res = $this->make(['mode' => 'restricted', 'include_originals' => true, 'allow_download' => true, 'recipients' => ['press@example.org']]);
+        $this->seedBytes($this->a['approved']);
+        [$press] = array_map(fn ($r) => $this->token($r['url']), $res['recipients']);
+        $cookie = $this->grantCookie($this->visit('GET', "/api/s/{$press}")->assertOk());
+
+        $r = $this->visit('POST', "/api/s/{$press}/download", ['items' => [$this->a['approved']->uuid]], $cookie)->assertOk();
+
+        $this->assertSame([$this->a['approved']->original_filename => 'ORIG-'.$this->a['approved']->id], $this->zipEntries($r->streamedContent()));
+    }
+
+    public function test_new_links_allow_downloads_by_default_and_can_be_turned_off(): void
+    {
+        $this->assertTrue($this->make(['mode' => 'public'])['share']['allow_download']);
+        $this->assertFalse($this->make(['mode' => 'public', 'allow_download' => false])['share']['allow_download']);
+        $this->assertTrue(ShareLink::query()->oldest('id')->first()->allow_download, 'the stored row keeps the default');
+    }
+
+    public function test_file_endpoint_streams_single_item_bytes_and_audits_the_download(): void
+    {
+        $res = $this->make(['mode' => 'public', 'allow_download' => true]);
+        $token = $this->token($res['url']);
+        $this->seedBytes($this->a['approved']);
+        $cookie = $this->grantCookie($this->visit('GET', "/api/s/{$token}")->assertOk());
+
+        $r = $this->visit('GET', "/api/s/{$token}/items/{$this->a['approved']->uuid}/file", [], $cookie)->assertOk();
+        $this->assertSame('PREVIEW-'.$this->a['approved']->id, $r->streamedContent());
+        $this->assertSame('image/webp', $r->headers->get('Content-Type'));
+        $this->assertStringContainsString('attachment; filename="', (string) $r->headers->get('Content-Disposition'));
+        $this->assertSame('no-store, private', $r->headers->get('Cache-Control'));
+        $this->assertSame(1, AuditLog::query()->where('action', 'share.downloaded')->count());
+    }
+
+    public function test_file_endpoint_respects_visibility_grants_and_the_download_flag(): void
+    {
+        $res = $this->make(['mode' => 'public', 'allow_download' => true]);
+        $token = $this->token($res['url']);
+        $cookie = $this->grantCookie($this->visit('GET', "/api/s/{$token}")->assertOk());
+
+        $this->visit('GET', "/api/s/{$token}/items/{$this->a['unreviewed']->uuid}/file", [], $cookie)->assertNotFound();
+        $this->visit('GET', "/api/s/{$token}/items/{$this->a['approved']->uuid}/file")->assertUnauthorized();
+
+        $off = $this->make(['mode' => 'public', 'allow_download' => false]);
+        $offToken = $this->token($off['url']);
+        $offCookie = $this->grantCookie($this->visit('GET', "/api/s/{$offToken}")->assertOk());
+        $this->visit('GET', "/api/s/{$offToken}/items/{$this->a['approved']->uuid}/file", [], $offCookie)->assertForbidden();
+        $this->assertSame(0, AuditLog::query()->where('action', 'share.downloaded')->count());
     }
 }

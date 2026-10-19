@@ -8,10 +8,14 @@ use App\Services\ShareService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Cookie;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /** Visitor side of share links. No staff session; throttled; responses are never cached. */
 class PublicShareController extends Controller
 {
+    /** Selected items per zip request; keeps one request inside classic zip limits and server time. */
+    public const MAX_ZIP_ITEMS = 500;
+
     public function __construct(private ShareService $shares) {}
 
     private function cookie(string $token, string $raw): Cookie
@@ -65,5 +69,38 @@ class PublicShareController extends Controller
         abort_unless($a, 404);
 
         return $this->nocache(response()->json(['url' => $this->shares->downloadUrl($link, $a, $request)]));
+    }
+
+    /**
+     * The bytes of one item, streamed over our own origin. Same rules as a download link: grant,
+     * allow_download, visibility. Used by phones/tabs that share or save files individually.
+     */
+    public function file(Request $request, string $token, string $asset): StreamedResponse
+    {
+        [$link] = $this->shares->resolve($token);
+        abort_unless($this->shares->currentGrant($link, $request), 401, 'Open the link again to continue.');
+        $a = $this->shares->visibleAssets($link)->firstWhere('uuid', $asset);
+        abort_unless($a, 404);
+
+        return $this->shares->fileStream($link, $a, $request);
+    }
+
+    /** Selected items streamed back as one zip. Same rules as a single download: grant, allow_download, visibility. */
+    public function downloadZip(Request $request, string $token): StreamedResponse
+    {
+        [$link] = $this->shares->resolve($token);
+        abort_unless($this->shares->currentGrant($link, $request), 401, 'Open the link again to continue.');
+        abort_unless($link->allow_download, 403, 'Downloads are not enabled for this link.');
+        $data = $request->validate([
+            'items' => ['required', 'array', 'min:1', 'max:'.self::MAX_ZIP_ITEMS],
+            'items.*' => ['string', 'max:64'],
+        ]);
+        $visible = $this->shares->visibleAssets($link)->keyBy('uuid');
+        $selected = collect($data['items'])->unique()->map(fn (string $uuid) => $visible->get($uuid))->filter()->values();
+        abort_if($selected->isEmpty(), 404, 'None of the selected items are available on this link.');
+        $files = $this->shares->downloadableAssets($link, $selected);
+        abort_if($files->isEmpty(), 404, 'None of the selected items have a downloadable version yet.');
+
+        return $this->shares->zipDownload($link, $files, $request);
     }
 }
