@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Backup\BackupDriver;
 use App\Http\Controllers\Controller;
+use App\Models\Asset;
 use App\Services\AuditLogger;
 use App\Services\SettingsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class SettingsController extends Controller
 {
@@ -41,6 +43,13 @@ class SettingsController extends Controller
             'storage_price_per_gb_month' => ['sometimes', 'numeric', 'min:0', 'max:1'],
             'storage_free_gb' => ['sometimes', 'numeric', 'min:0', 'max:100000'],
             'monthly_budget_usd' => ['sometimes', 'numeric', 'min:0', 'max:100000'],
+            'default_review_state' => ['sometimes', Rule::in(Asset::REVIEW_STATES)],
+            'default_tags' => ['sometimes', 'nullable', 'string', 'max:1000'],
+            'default_captured_at' => ['sometimes', 'boolean'],
+            'default_album_name' => ['sometimes', 'string', 'max:120'],
+            'default_album_uuid' => ['sometimes', 'nullable', 'string', Rule::exists('albums', 'uuid')->whereNull('deleted_at')],
+            'daily_galleries_enabled' => ['sometimes', 'boolean'],
+            'gallery_timezone' => ['sometimes', 'string', Rule::in(timezone_identifiers_list())],
         ]);
         $this->settings->put($d);
         $audit->log('settings.updated', null, $d);

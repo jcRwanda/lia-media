@@ -19,7 +19,13 @@ use Illuminate\Validation\ValidationException;
  */
 class UploadService
 {
-    public function __construct(private ObjectStorage $storage, private AuditLogger $audit) {}
+    public function __construct(
+        private ObjectStorage $storage,
+        private AuditLogger $audit,
+        private SettingsService $settings,
+        private DailyGalleryService $galleries,
+        private DefaultAlbumService $defaults,
+    ) {}
 
     public static function mimeAllowed(string $mime): bool
     {
@@ -54,7 +60,7 @@ class UploadService
     {
         $sha = strtolower($data['sha256']);
         if ($dup = $this->findDuplicate($sha, (int) $data['size_bytes'])) {
-            $this->applyAlbum($dup, $data['context'] ?? [], $user);
+            $this->assignDefaults($dup, $this->withDefaults($data['context'] ?? []), $user);
             $this->audit->log('upload.duplicate', $dup, ['filename' => $data['filename']]);
 
             return ['status' => 'duplicate', 'asset' => ['uuid' => $dup->uuid, 'title' => $dup->title]];
@@ -158,16 +164,17 @@ class UploadService
             throw ValidationException::withMessages(['upload' => $error]);
         }
 
+        $ctx = $this->withDefaults($s->context ?? []);
+
         // A parallel upload of the same bytes may have finished first.
         if ($dup = $this->findDuplicate($s->sha256, $s->size_bytes)) {
             $this->storage->delete($s->storage_key);
             $s->update(['status' => 'duplicate', 'asset_id' => $dup->id, 'completed_at' => now()]);
-            $this->applyAlbum($dup, $s->context ?? [], $user);
+            $this->assignDefaults($dup, $ctx, $user);
 
             return $dup;
         }
 
-        $ctx = $s->context ?? [];
         $asset = DB::transaction(function () use ($s, $user, $ctx, $head) {
             $asset = Asset::query()->create([
                 'uuid' => Str::uuid()->toString(), 'kind' => Asset::kindFromMime($s->mime_type),
@@ -177,17 +184,18 @@ class UploadService
                 'project_id' => $ctx['project_id'] ?? null, 'cohort_id' => $ctx['cohort_id'] ?? null, 'event_id' => $ctx['event_id'] ?? null,
                 'category_id' => $ctx['category_id'] ?? null, 'credit' => $ctx['credit'] ?? null,
                 'width' => $ctx['width'] ?? null, 'height' => $ctx['height'] ?? null, 'duration_ms' => $ctx['duration_ms'] ?? null,
-                'captured_at' => $ctx['captured_at'] ?? null,
+                'captured_at' => $ctx['captured_at'] ?? null, 'review_state' => $this->initialReviewState(),
                 'metadata' => ['checksum_verified' => $s->mode === 'single' && (bool) $head['sha256_base64'], 'checksum_method' => $s->mode === 'single' ? 'storage_put_checksum' : 'pending_server_hash'],
             ]);
-            if (! empty($ctx['tags'])) {
-                $asset->tags()->sync(collect($ctx['tags'])->map(fn ($name) => Tag::query()->firstOrCreate(['slug' => Str::slug($name)], ['name' => $name])->id));
+            $tagNames = ! empty($ctx['tags']) ? $ctx['tags'] : $this->defaultTags();
+            if ($tagNames) {
+                $asset->tags()->sync(collect($tagNames)->map(fn ($name) => Tag::query()->firstOrCreate(['slug' => Str::slug($name)], ['name' => $name])->id));
             }
             $s->update(['status' => 'completed', 'asset_id' => $asset->id, 'completed_at' => now()]);
 
             return $asset;
         });
-        $this->applyAlbum($asset, $ctx, $user);
+        $this->assignDefaults($asset, $ctx, $user);
         $this->audit->log('asset.uploaded', $asset, ['size' => $asset->size_bytes, 'mode' => $s->mode]);
         if (! ($asset->metadata['checksum_verified'] ?? false)) {
             VerifyAssetChecksum::dispatch($asset->id);
@@ -222,11 +230,46 @@ class UploadService
         return $n;
     }
 
-    private function applyAlbum(Asset $asset, array $ctx, User $user): void
+    /** Fill in the configured upload defaults (date, review state, tags) for a new upload. */
+    private function withDefaults(array $ctx): array
     {
-        if (empty($ctx['album_id']) || ! ($album = Album::query()->find($ctx['album_id']))) {
-            return;
+        if (blank($ctx['captured_at'] ?? null) && (bool) $this->settings->get('default_captured_at')) {
+            $ctx['captured_at'] = now()->toIso8601String();
         }
+
+        return $ctx;
+    }
+
+    private function initialReviewState(): string
+    {
+        $state = (string) $this->settings->get('default_review_state');
+
+        return in_array($state, Asset::REVIEW_STATES, true) ? $state : 'unreviewed';
+    }
+
+    /** @return list<string> */
+    private function defaultTags(): array
+    {
+        return collect(explode(',', (string) $this->settings->get('default_tags')))->map(fn ($t) => trim($t))->filter()->unique()->values()->all();
+    }
+
+    /**
+     * Album filing for a finalized upload: an explicitly chosen album wins, otherwise the asset
+     * falls back to the default album. Every upload is also filed into its day gallery (unless that
+     * is turned off), which keeps the automatic daily archive complete.
+     */
+    private function assignDefaults(Asset $asset, array $ctx, User $user): void
+    {
+        $default = $this->defaults->ensure($user);
+        $album = ! empty($ctx['album_id']) ? Album::query()->find($ctx['album_id']) : $default;
+        if ($album) {
+            $this->attachToAlbum($asset, $album, $user);
+        }
+        $this->galleries->assign($asset, $user);
+    }
+
+    private function attachToAlbum(Asset $asset, Album $album, User $user): void
+    {
         if (! $album->assets()->whereKey($asset->id)->exists()) {
             $album->assets()->attach($asset->id, ['position' => (int) $album->assets()->max('album_asset.position') + 1, 'added_by' => $user->id, 'added_at' => now()]);
         }

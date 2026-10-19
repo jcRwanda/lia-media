@@ -108,7 +108,7 @@ export default function UploadPage() {
                     <Field label="Add to album"><Select value={ctx.album_id ?? ''} onChange={(e) => setCtx({ ...ctx, album_id: num(e.target.value) })}><option value="">—</option>{lk?.albums.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}</Select></Field>
                     <Field label="Tags (comma separated)"><Input value={ctx.tagText} onChange={(e) => setCtx({ ...ctx, tagText: e.target.value })} placeholder="stage, graduation" /></Field>
                     <Field label="Credit"><Input value={ctx.credit ?? ''} onChange={(e) => setCtx({ ...ctx, credit: e.target.value })} placeholder="Photographer name" /></Field>
-                    <p className="text-xs text-neutral-500">New uploads start as <strong>unreviewed</strong> and never appear in shares until approved.</p>
+                    <p className="text-xs text-neutral-500">Uploading needs no input: files are dated today, tagged with the archive defaults and filed into today’s day gallery automatically. A project, event, album or extra tags here override or add to those defaults. New uploads start as <strong>unreviewed</strong> and never appear in shares until approved.</p>
                 </Card>
             </div>
         </>

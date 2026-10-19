@@ -11,6 +11,9 @@ React Router, TanStack Query, React Hook Form + Zod · MariaDB 10.3+/MySQL · Cl
 - **Uploads:** browser SHA-256 → dedupe → presigned single PUT (checksum signed) or resumable multipart for files over 100 MB.
   Thumbnails/video posters are made in the browser and uploaded as derivatives (no ffmpeg on the server).
   Server re-verifies hashes on a queued job; interrupted uploads resume from the parts R2 already holds.
+- **Upload defaults & day galleries:** new uploads are auto-dated, tagged and filed into the configured default album,
+  and every asset lands in an automatic gallery for its capture day (Africa/Kigali). `php artisan gallery:backfill`
+  groups existing media into day galleries (idempotent).
 - **Library:** filters (project, event, cohort, category, tags, type, review/consent state), bulk edit, albums, soft delete, audited downloads.
 - **Review:** unreviewed → approved → published, plus restricted/archived; publishing is blocked while consent is missing/withdrawn;
   withdrawing consent restricts every linked item automatically; publication usage log.

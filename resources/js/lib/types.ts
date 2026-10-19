@@ -23,7 +23,7 @@ export interface Lookups {
     cohorts: { id: number; name: string; code: string; year: number | null; project_id: number | null }[];
     events: { id: number; title: string; slug: string; occurred_on: string | null; project_id: number | null; cohort_id: number | null }[];
     categories: { id: number; name: string; slug: string; parent_id: number | null }[];
-    albums: { id: number; uuid: string; title: string }[];
+    albums: { id: number; uuid: string; title: string; kind: AlbumKind; is_default: boolean }[];
     tags: { id: number; name: string; slug: string }[];
 }
 
@@ -100,6 +100,10 @@ export interface AlbumSummary {
     id: number;
     title: string;
     description: string | null;
+    kind: AlbumKind;
+    day: string | null;
+    is_default: boolean;
+    is_today: boolean;
     project_id: number | null;
     event_id: number | null;
     cohort_id: number | null;
@@ -111,6 +115,8 @@ export interface AlbumSummary {
     created_by: string | null;
     updated_at: string;
 }
+
+export type AlbumKind = 'curated' | 'daily';
 
 export interface ShareDto {
     uuid: string;

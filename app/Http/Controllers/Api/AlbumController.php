@@ -7,14 +7,16 @@ use App\Models\Album;
 use App\Models\Asset;
 use App\Services\AssetPresenter;
 use App\Services\AuditLogger;
+use App\Services\DailyGalleryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class AlbumController extends Controller
 {
-    public function __construct(private AssetPresenter $present, private AuditLogger $audit) {}
+    public function __construct(private AssetPresenter $present, private AuditLogger $audit, private DailyGalleryService $galleries) {}
 
     private function rules(): array
     {
@@ -33,6 +35,8 @@ class AlbumController extends Controller
 
         return [
             'uuid' => $al->uuid, 'id' => $al->id, 'title' => $al->title, 'description' => $al->description,
+            'kind' => $al->kind, 'day' => $al->day, 'is_default' => (bool) $al->is_default,
+            'is_today' => $al->day !== null && $al->day === $this->galleries->today()->toDateString(),
             'project_id' => $al->project_id, 'event_id' => $al->event_id, 'cohort_id' => $al->cohort_id,
             'event' => $al->event?->title, 'project' => $al->project?->name,
             'asset_count' => (int) ($al->assets_count ?? $al->assets()->count()),
@@ -44,14 +48,17 @@ class AlbumController extends Controller
     public function index(Request $request): JsonResponse
     {
         $albums = Album::query()->withCount('assets')->with(['cover.derivatives', 'event:id,title', 'project:id,name', 'creator:id,name', 'assets' => fn ($q) => $q->with('derivatives')->limit(1)])
-            ->when($request->query('q'), fn ($q, $t) => $q->where('title', 'like', "%{$t}%"))->latest('updated_at')->get();
+            ->when($request->query('kind'), fn ($q, $k) => $q->where('kind', $k))
+            ->when($request->query('q'), fn ($q, $t) => $q->where('title', 'like', "%{$t}%"))
+            // Day galleries first, newest day first; then curated albums by most recently touched.
+            ->orderByRaw("case when kind = 'daily' then 0 else 1 end")->orderByDesc('day')->orderByDesc('updated_at')->get();
 
         return response()->json(['data' => $albums->map(fn ($a) => $this->summary($a))]);
     }
 
     public function store(Request $request): JsonResponse
     {
-        $album = Album::query()->create($request->validate($this->rules()) + ['created_by' => $request->user()->id]);
+        $album = Album::query()->create($request->validate($this->rules()) + ['created_by' => $request->user()->id, 'kind' => Album::KIND_CURATED]);
         $this->audit->log('album.created', $album);
 
         return response()->json(['album' => $this->summary($album)], 201);
@@ -79,6 +86,12 @@ class AlbumController extends Controller
 
     public function destroy(Album $album): JsonResponse
     {
+        if ($album->kind === Album::KIND_DAILY) {
+            throw ValidationException::withMessages(['album' => 'Day galleries are managed automatically and cannot be deleted.']);
+        }
+        if ($album->is_default) {
+            throw ValidationException::withMessages(['album' => 'The default album cannot be deleted. Choose another default in Settings first.']);
+        }
         $album->delete();
         $this->audit->log('album.deleted', $album);
 

@@ -14,6 +14,14 @@ class SettingsService
         'storage_price_per_gb_month' => 0.015,
         'storage_free_gb' => 10,
         'monthly_budget_usd' => 10,
+        // Upload defaults so day-to-day uploading needs almost no input.
+        'default_review_state' => 'unreviewed',
+        'default_tags' => '',                 // comma-separated names applied to new uploads
+        'default_captured_at' => true,        // date new uploads as captured today when EXIF is absent
+        'default_album_name' => 'Unsorted',   // used when the default album has to be created
+        'default_album_uuid' => '',           // explicit default album; empty = auto-managed
+        'daily_galleries_enabled' => true,    // auto-file uploads into a per-day gallery
+        'gallery_timezone' => 'Africa/Kigali',
     ];
 
     public function all(): array
