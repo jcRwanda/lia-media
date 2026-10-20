@@ -53,6 +53,13 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
             Route::get('/taxonomy/{type}', [TaxonomyController::class, 'index'])->whereIn('type', ['projects', 'cohorts', 'events', 'categories']);
         });
         Route::post('/assets/{asset}/download', [AssetController::class, 'download'])->middleware('can:assets.download_original');
+        // Originals streamed straight from storage: one zip for a selection or a whole album, or one
+        // file at a time on phones (GET so the browser can treat each response as a file).
+        Route::middleware('can:assets.download_original')->group(function () {
+            Route::post('/assets/download', [AssetController::class, 'downloadZip']);
+            Route::get('/assets/{asset}/file', [AssetController::class, 'file']);
+            Route::post('/albums/{album}/download', [AlbumController::class, 'download']);
+        });
         Route::middleware('can:assets.edit')->group(function () {
             Route::patch('/assets/{asset}', [AssetController::class, 'update']);
             Route::post('/assets-bulk', [AssetController::class, 'bulk']);

@@ -8,12 +8,14 @@ use App\Models\Asset;
 use App\Models\Tag;
 use App\Services\AssetPresenter;
 use App\Services\AuditLogger;
+use App\Services\DownloadService;
 use App\Storage\ObjectStorage;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AssetController extends Controller
 {
@@ -112,6 +114,26 @@ class AssetController extends Controller
         $this->audit->log('asset.downloaded', $asset, ['variant' => 'original']);
 
         return response()->json(['url' => $url, 'expires_in' => config('media.ttl.download')]);
+    }
+
+    /** Selected originals streamed back as one zip (desktop downloads from the library/gallery). */
+    public function downloadZip(Request $request, DownloadService $downloads): StreamedResponse
+    {
+        $data = $request->validate([
+            'items' => ['required', 'array', 'min:1', 'max:'.DownloadService::MAX_ZIP_ITEMS],
+            'items.*' => ['string', 'max:64'],
+        ]);
+        $assets = Asset::query()->with('derivatives')->whereIn('uuid', $data['items'])->get();
+        $files = $downloads->downloadable($assets);
+        abort_if($files->isEmpty(), 404, 'None of the selected items have a downloadable copy.');
+
+        return $downloads->zip($files, 'library-'.now()->format('Ymd-His').'.zip');
+    }
+
+    /** One original streamed over our own origin — how phones walk through a selection. */
+    public function file(Asset $asset, DownloadService $downloads): StreamedResponse
+    {
+        return $downloads->file($asset);
     }
 
     public function bulk(Request $request): JsonResponse

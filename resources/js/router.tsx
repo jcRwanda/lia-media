@@ -1,6 +1,7 @@
 import { createBrowserRouter } from 'react-router';
 import AppLayout, { RequireAbility } from '@/layouts/AppLayout';
 import LoginPage from '@/pages/LoginPage';
+import SetPasswordPage from '@/pages/SetPasswordPage';
 import DashboardPage from '@/pages/DashboardPage';
 import UsersPage from '@/pages/admin/UsersPage';
 import AuditPage from '@/pages/admin/AuditPage';
@@ -20,6 +21,7 @@ const guard = (ability: string, el: React.ReactNode) => <RequireAbility ability=
 
 export const routes = [
     { path: '/login', element: <LoginPage /> },
+    { path: '/set-password', element: <SetPasswordPage /> },
     { path: '/s/:token', element: <VisitorGalleryPage /> },
     {
         element: <AppLayout />,

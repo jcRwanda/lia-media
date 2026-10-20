@@ -31,7 +31,9 @@ export default function LoginPage() {
             await ensureCsrf();
             const res = await api<{ user: User }>('/auth/login', { method: 'POST', json: values });
             qc.setQueryData(['me'], res.user);
-            nav(next.startsWith('/') ? next : '/', { replace: true });
+            const target = next.startsWith('/') ? next : '/';
+            // The welcome-email temp password has to be replaced before anything else loads.
+            nav(res.user.must_change_password ? `/set-password?next=${encodeURIComponent(target)}` : target, { replace: true });
         } catch (e) {
             const f = fieldErrors(e);
             setError(f.email || (e as Error).message);

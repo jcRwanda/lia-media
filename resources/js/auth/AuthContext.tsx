@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { createContext, useContext, type ReactNode } from 'react';
-import { api, ApiError } from '@/lib/api';
+import { createContext, useContext, useEffect, type ReactNode } from 'react';
+import { api, ApiError, onPasswordRequired } from '@/lib/api';
 import type { User } from '@/lib/types';
 
 interface AuthState {
@@ -27,6 +27,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
         staleTime: 60_000,
     });
+    // Any locked route answers with the password-lock code: mirror it onto the cached user so the
+    // app switches to the set-password screen wherever the user happens to be.
+    useEffect(() => onPasswordRequired(() => {
+        qc.setQueryData<User | null>(['me'], (current) => (current ? { ...current, must_change_password: true } : current));
+    }), [qc]);
     const user = q.data ?? null;
     const value: AuthState = {
         user,

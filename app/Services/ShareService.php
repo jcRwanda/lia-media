@@ -9,7 +9,6 @@ use App\Models\ShareLink;
 use App\Models\ShareRecipient;
 use App\Models\User;
 use App\Storage\ObjectStorage;
-use App\Support\StreamingZip;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -32,7 +31,7 @@ class ShareService
 
     public const CODE_ATTEMPTS_PER_LINK = 20;   // all IPs, per hour
 
-    public function __construct(private ObjectStorage $storage, private AuditLogger $audit, private AssetPresenter $present, private SettingsService $settings) {}
+    public function __construct(private ObjectStorage $storage, private AuditLogger $audit, private AssetPresenter $present, private SettingsService $settings, private StreamedMedia $media) {}
 
     public static function newToken(): string
     {
@@ -253,26 +252,7 @@ class ShareService
         $file = $this->downloadableFile($link, $a);
         $this->audit->log('share.downloaded', $a, ['share' => $link->uuid, 'original' => $link->include_originals, 'stream' => true, 'ip' => $request->ip()], null, 'share_link');
 
-        return $this->streamFile($file, ['Content-Type' => $file['mime_type'] ?: 'application/octet-stream']);
-    }
-
-    /** @param array{storage_key: string, filename: string, mime_type: ?string} $file */
-    private function streamFile(array $file, array $headers = []): StreamedResponse
-    {
-        $safe = str_replace(['"', "\r", "\n"], '', $file['filename']);
-
-        return response()->stream(function () use ($file) {
-            foreach ($this->storage->readChunks($file['storage_key']) as $chunk) {
-                echo $chunk;
-            }
-        }, 200, array_merge([
-            'Content-Disposition' => 'attachment; filename="'.$safe.'"',
-            'Cache-Control' => 'no-store, private',
-            'X-Robots-Tag' => 'noindex, nofollow',
-            'Referrer-Policy' => 'no-referrer',
-            // Never buffer on the proxy: the whole point is streaming.
-            'X-Accel-Buffering' => 'no',
-        ], $headers));
+        return $this->media->file($file, ['Content-Type' => $file['mime_type'] ?: 'application/octet-stream']);
     }
 
     /**
@@ -282,24 +262,11 @@ class ShareService
     public function zipDownload(ShareLink $link, Collection $assets, Request $request): StreamedResponse
     {
         $zipName = Str::slug($link->title ?: 'share').'-'.now()->format('Ymd-His').'.zip';
+        $files = $assets->map(fn (Asset $a) => ['asset' => $a] + $this->downloadableFile($link, $a))->values()->all();
 
-        return response()->stream(function () use ($link, $assets, $request) {
-            $zip = new StreamingZip(fopen('php://output', 'wb'));
-            foreach ($assets as $a) {
-                $file = $this->downloadableFile($link, $a);
-                $zip->add($file['filename'], $this->storage->readChunks($file['storage_key']));
-                $this->audit->log('share.downloaded', $a, ['share' => $link->uuid, 'original' => $link->include_originals, 'zip' => true, 'ip' => $request->ip()], null, 'share_link');
-            }
-            $zip->finish();
-        }, 200, [
-            'Content-Type' => 'application/zip',
-            'Content-Disposition' => 'attachment; filename="'.$zipName.'"',
-            'Cache-Control' => 'no-store, private',
-            'X-Robots-Tag' => 'noindex, nofollow',
-            'Referrer-Policy' => 'no-referrer',
-            // Never buffer a zip on the proxy: the whole point is streaming.
-            'X-Accel-Buffering' => 'no',
-        ]);
+        return $this->media->zip($zipName, $files, function (array $file) use ($link, $request) {
+            $this->audit->log('share.downloaded', $file['asset'], ['share' => $link->uuid, 'original' => $link->include_originals, 'zip' => true, 'ip' => $request->ip()], null, 'share_link');
+        });
     }
 
     public function staffPayload(ShareLink $l): array

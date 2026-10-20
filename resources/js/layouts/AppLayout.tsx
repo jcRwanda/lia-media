@@ -24,6 +24,8 @@ export default function AppLayout() {
     const loc = useLocation();
     if (loading) return <div className="p-8 text-sm text-neutral-500">Loading…</div>;
     if (!user) return <Navigate to={`/login?next=${encodeURIComponent(loc.pathname + loc.search)}`} replace />;
+    // A temporary password locks every route: park the user on the set-password screen first.
+    if (user.must_change_password) return <Navigate to={`/set-password?next=${encodeURIComponent(loc.pathname + loc.search)}`} replace />;
     const items = nav.filter((n) => can(n.ability));
     const links = (
         <nav className="space-y-0.5">

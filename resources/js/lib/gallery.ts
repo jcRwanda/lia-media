@@ -62,20 +62,26 @@ export function filenameFromDisposition(header: string | null): string | null {
 }
 
 /**
+ * Fetch the real bytes of one file from our own origin (a presigned bucket URL would need bucket
+ * CORS to be fetchable), named from the response's Content-Disposition.
+ */
+export async function fetchRemoteFile(url: string, fallbackName: string): Promise<File> {
+    const res = await fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/octet-stream' } });
+    if (!res.ok) {
+        throw new Error('Could not prepare one of the files.');
+    }
+    const blob = await res.blob();
+    const bytes = await blob.arrayBuffer();
+
+    return new File([bytes], filenameFromDisposition(res.headers.get('Content-Disposition')) ?? fallbackName, { type: blob.type || 'application/octet-stream' });
+}
+
+/**
  * Fetch the real bytes of each selected item from our own origin (the file endpoint), so they can be
  * handed to the share sheet or saved. Requests run in parallel to keep the share gesture valid.
  */
 export async function fetchSelectedFiles(basePath: string, uuids: readonly string[], titleFor: (uuid: string) => string): Promise<File[]> {
-    return Promise.all(uuids.map(async (uuid) => {
-        const res = await fetch(`${basePath}/items/${uuid}/file`, { credentials: 'same-origin', headers: { Accept: 'application/octet-stream' } });
-        if (!res.ok) {
-            throw new Error('Could not prepare one of the files.');
-        }
-        const blob = await res.blob();
-        const bytes = await blob.arrayBuffer();
-
-        return new File([bytes], filenameFromDisposition(res.headers.get('Content-Disposition')) ?? titleFor(uuid), { type: blob.type || 'application/octet-stream' });
-    }));
+    return Promise.all(uuids.map((uuid) => fetchRemoteFile(`${basePath}/items/${uuid}/file`, titleFor(uuid))));
 }
 
 type ShareNavigator = Navigator & { canShare?: (data: ShareData) => boolean; share?: (data: ShareData) => Promise<void> };

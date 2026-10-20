@@ -8,6 +8,9 @@ export interface User {
     status: 'active' | 'disabled';
     abilities: string[];
     last_login_at: string | null;
+    /** True while the admin-generated temporary password has not been replaced yet. */
+    must_change_password: boolean;
+    first_login_completed: boolean;
 }
 
 export interface Paginated<T> {

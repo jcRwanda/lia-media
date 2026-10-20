@@ -8,11 +8,14 @@ use App\Models\Asset;
 use App\Services\AssetPresenter;
 use App\Services\AuditLogger;
 use App\Services\DailyGalleryService;
+use App\Services\DownloadService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AlbumController extends Controller
 {
@@ -69,6 +72,15 @@ class AlbumController extends Controller
         $assets = $album->assets()->with('derivatives')->get();
 
         return response()->json(['album' => $this->summary($album->load(['cover.derivatives', 'event', 'project', 'creator'])), 'assets' => $assets->map(fn ($a) => $this->present->card($a) + ['position' => $a->pivot->position])]);
+    }
+
+    /** The whole album streamed back as one zip of its originals. */
+    public function download(Album $album, DownloadService $downloads): StreamedResponse
+    {
+        $files = $downloads->downloadable($album->assets()->with('derivatives')->get());
+        abort_if($files->isEmpty(), 404, 'This album has no downloadable media yet.');
+
+        return $downloads->zip($files, Str::slug($album->title ?: 'album').'-'.now()->format('Ymd-His').'.zip', ['album' => $album->uuid]);
     }
 
     public function update(Request $request, Album $album): JsonResponse

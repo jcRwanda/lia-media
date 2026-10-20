@@ -82,6 +82,21 @@ export default function VisitorGalleryPage() {
         const t = csrfToken();
         if (t) submitZipDownload(`/api/s/${token}/download`, t, selected);
     };
+    /** Everything, at once: the server streams one zip (desktop only — phones can't unzip reliably). */
+    const downloadAll = async () => {
+        if (busy || items.length < 2) return;
+        setBusy(true);
+        setNotice(null);
+        try {
+            await ensureCsrf();
+            const t = csrfToken();
+            if (t) submitZipDownload(`/api/s/${token}/download`, t, items.map((it) => it.uuid));
+        } catch (e) {
+            setNotice((e as Error).message || 'Could not prepare the download.');
+        } finally {
+            setBusy(false);
+        }
+    };
     const swipe = (dx: number, dy: number) => {
         const dir = swipeDirection(dx, dy);
         if (dir === 'next') setView((v) => (v === null ? v : stepIndex(v, 1, items.length)));
@@ -116,10 +131,18 @@ export default function VisitorGalleryPage() {
                                 {q.data.share.message ? <p className="mt-1 max-w-2xl text-sm text-neutral-600">{q.data.share.message}</p> : null}
                                 <p className="mt-1 text-xs text-neutral-400">{items.length} item{items.length === 1 ? '' : 's'}{q.data.share.expires_at ? ` · available until ${formatDate(q.data.share.expires_at)}` : ''}</p>
                             </div>
-                            {allowDownload && items.length && !selecting ? (
-                                <Button size="sm" variant="secondary" onClick={() => setSelecting(true)}><CheckCircle2 className="h-4 w-4" />Select</Button>
-                            ) : null}
+                            <div className="flex flex-wrap items-center gap-2">
+                                {allowDownload && items.length > 1 && !selecting && !individual ? (
+                                    <Button size="sm" variant="secondary" disabled={busy || items.length > MAX_ZIP_ITEMS} title={items.length > MAX_ZIP_ITEMS ? `A share can stream at most ${MAX_ZIP_ITEMS} items in one zip` : undefined} onClick={() => void downloadAll()}>
+                                        <Download className="h-4 w-4" />{busy ? 'Preparing…' : 'Download all'}
+                                    </Button>
+                                ) : null}
+                                {allowDownload && items.length && !selecting ? (
+                                    <Button size="sm" variant="secondary" onClick={() => setSelecting(true)}><CheckCircle2 className="h-4 w-4" />Select</Button>
+                                ) : null}
+                            </div>
                         </div>
+                        {notice && !selecting ? <p role="alert" className="mt-2 rounded-lg bg-lia-50 p-2 text-sm text-lia-700">{notice}</p> : null}
                         <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
                             {items.map((it, i) => {
                                 const isSelected = selected.includes(it.uuid);

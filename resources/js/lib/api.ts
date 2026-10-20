@@ -1,8 +1,25 @@
 /** Same-origin fetch wrapper for Laravel Sanctum SPA auth (session cookie + XSRF-TOKEN). */
 export class ApiError extends Error {
-    constructor(public status: number, message: string, public errors: Record<string, string[]> = {}) {
+    constructor(public status: number, message: string, public errors: Record<string, string[]> = {}, public code?: string) {
         super(message);
     }
+}
+
+/** `code` the password lock middleware adds so any failing request can be recognised, plus a 423 fallback. */
+export const MUST_CHANGE_CODE = 'must_change_password';
+
+export function isPasswordLock(e: unknown): boolean {
+    return e instanceof ApiError && (e.code === MUST_CHANGE_CODE || e.status === 423);
+}
+
+type PasswordLockListener = () => void;
+const passwordLockListeners = new Set<PasswordLockListener>();
+
+/** Notified whenever an API response says the temporary password has not been replaced yet. */
+export function onPasswordRequired(listener: PasswordLockListener): () => void {
+    passwordLockListeners.add(listener);
+
+    return () => passwordLockListeners.delete(listener);
 }
 
 export function csrfToken(): string | null {
@@ -34,7 +51,13 @@ export async function api<T = unknown>(path: string, init: RequestInit & { json?
         return api<T>(path, { ...init, _retried: true } as RequestInit);
     }
     const data = res.status === 204 ? null : await res.json().catch(() => null);
-    if (!res.ok) throw new ApiError(res.status, data?.message || res.statusText, data?.errors || {});
+    if (!res.ok) {
+        const error = new ApiError(res.status, data?.message || res.statusText, data?.errors || {}, data?.code);
+        if (isPasswordLock(error)) {
+            passwordLockListeners.forEach((listener) => listener());
+        }
+        throw error;
+    }
     return data as T;
 }
 
