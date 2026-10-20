@@ -66,7 +66,7 @@ class AuthRolesTest extends TestCase
         $admin = User::factory()->role('admin')->create();
         $mm = User::factory()->role('multimedia')->create();
         $this->actingAs($mm)->getJson('/api/users')->assertForbidden();
-        $this->actingAs($admin)->postJson('/api/users', ['name' => 'New', 'email' => 'new@example.com', 'role' => 'management', 'password' => 'a-long-password'])
+        $this->actingAs($admin)->postJson('/api/users', ['name' => 'New', 'email' => 'new@example.com', 'role' => 'management'])
             ->assertCreated()->assertJsonPath('user.role', 'management');
         $this->actingAs($admin)->patchJson("/api/users/{$admin->id}", ['role' => 'multimedia'])->assertStatus(422);
         $this->actingAs($admin)->patchJson("/api/users/{$mm->id}", ['status' => 'disabled'])->assertOk();

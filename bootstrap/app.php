@@ -1,5 +1,8 @@
 <?php
 
+use App\Http\Middleware\EnsurePasswordChanged;
+use App\Http\Middleware\EnsureUserIsActive;
+use App\Services\ShareService;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -15,8 +18,11 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->statefulApi();
         // Share grant cookies hold a random secret whose hash is checked server-side; keep them readable on stateless API requests.
-        $middleware->encryptCookies(except: [\App\Services\ShareService::COOKIE]);
-        $middleware->alias(['active' => \App\Http\Middleware\EnsureUserIsActive::class]);
+        $middleware->encryptCookies(except: [ShareService::COOKIE]);
+        $middleware->alias([
+            'active' => EnsureUserIsActive::class,
+            'must_change' => EnsurePasswordChanged::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

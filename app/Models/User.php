@@ -14,13 +14,18 @@ class User extends Authenticatable
     /** @use HasFactory<UserFactory> */
     use HasApiTokens, HasFactory, Notifiable;
 
-    protected $fillable = ['name', 'email', 'password', 'role', 'status'];
+    protected $fillable = ['name', 'email', 'password', 'role', 'status', 'must_change_password'];
 
     protected $hidden = ['password', 'remember_token'];
 
     protected function casts(): array
     {
-        return ['email_verified_at' => 'datetime', 'last_login_at' => 'datetime', 'password' => 'hashed'];
+        return [
+            'email_verified_at' => 'datetime',
+            'last_login_at' => 'datetime',
+            'password' => 'hashed',
+            'must_change_password' => 'boolean',
+        ];
     }
 
     public function isActive(): bool
@@ -39,6 +44,8 @@ class User extends Authenticatable
             'id' => $this->id, 'name' => $this->name, 'email' => $this->email, 'role' => $this->role,
             'status' => $this->status, 'abilities' => Roles::abilitiesFor($this->role),
             'last_login_at' => $this->last_login_at?->toIso8601String(),
+            'must_change_password' => (bool) $this->must_change_password,
+            'first_login_completed' => (bool) $this->last_login_at && ! $this->must_change_password,
         ];
     }
 }
