@@ -6,8 +6,11 @@ namespace App\Support;
 final class Roles
 {
     public const ADMIN = 'admin';
+
     public const MULTIMEDIA = 'multimedia';
+
     public const COMMUNICATIONS = 'communications';
+
     public const MANAGEMENT = 'management';
 
     public const ALL = [self::ADMIN, self::MULTIMEDIA, self::COMMUNICATIONS, self::MANAGEMENT];
@@ -19,7 +22,7 @@ final class Roles
         'assets.edit' => [self::MULTIMEDIA, self::COMMUNICATIONS],
         'assets.delete' => [],
         'assets.download_original' => [self::MULTIMEDIA, self::COMMUNICATIONS, self::MANAGEMENT],
-        'taxonomy.manage' => [self::MULTIMEDIA, self::COMMUNICATIONS],
+        'taxonomy.manage' => [],
         'albums.manage' => [self::MULTIMEDIA, self::COMMUNICATIONS],
         'shares.manage' => [self::MULTIMEDIA, self::COMMUNICATIONS],
         'review.approve' => [self::COMMUNICATIONS, self::MANAGEMENT],

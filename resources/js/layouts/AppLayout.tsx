@@ -69,10 +69,9 @@ export default function AppLayout() {
 export function Brand() {
     return (
         <div className="flex items-center gap-2">
-            <span className="grid h-8 w-8 place-items-center rounded-lg bg-lia-600 text-xs font-bold text-white">LIA</span>
+            <img src="/images/lia-logo.png" alt="Love In Arts" className="h-10 w-auto" />
             <div className="leading-tight">
                 <div className="text-sm font-semibold">Media Archive</div>
-                <div className="text-[11px] text-neutral-500">Love In Arts</div>
             </div>
         </div>
     );

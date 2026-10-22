@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex, nofollow">
     <title>LIA Media Archive</title>
+    @viteReactRefresh
     @vite(['resources/css/app.css', 'resources/js/main.tsx'])
 </head>
 <body class="bg-neutral-50 text-neutral-900 antialiased">

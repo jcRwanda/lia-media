@@ -58,6 +58,9 @@ class AuthRolesTest extends TestCase
         $this->assertFalse(Roles::allows('communications', 'assets.upload'));
         $this->assertTrue(Roles::allows('management', 'audit.view'));
         $this->assertFalse(Roles::allows('management', 'assets.edit'));
+        $this->assertFalse(Roles::allows('multimedia', 'taxonomy.manage'));
+        $this->assertFalse(Roles::allows('communications', 'taxonomy.manage'));
+        $this->assertTrue(Roles::allows('admin', 'taxonomy.manage'));
         $this->assertFalse(Roles::allows(null, 'library.view'));
     }
 

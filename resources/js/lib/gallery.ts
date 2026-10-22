@@ -133,7 +133,7 @@ export function saveFilesSequentially(files: File[], delayMs = 600): void {
  * Submit a hidden form so the browser streams the zip straight to disk — fetching it into a blob
  * would hold the whole archive in memory, which phones choke on.
  */
-export function submitZipDownload(action: string, csrfToken: string, items: readonly string[]): void {
+export function submitZipDownload(action: string, csrfToken: string, items: readonly string[], extra: Record<string, string> = {}): void {
     const form = document.createElement('form');
     form.method = 'post';
     form.action = action;
@@ -146,6 +146,7 @@ export function submitZipDownload(action: string, csrfToken: string, items: read
         form.appendChild(input);
     };
     add('_token', csrfToken);
+    Object.entries(extra).forEach(([name, value]) => add(name, value));
     items.forEach((uuid) => add('items[]', uuid));
     document.body.appendChild(form);
     form.submit();

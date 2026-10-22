@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ConsentController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DerivativeController;
+use App\Http\Controllers\Api\DownloadController;
 use App\Http\Controllers\Api\LookupController;
 use App\Http\Controllers\Api\PublicationController;
 use App\Http\Controllers\Api\PublicShareController;
@@ -47,6 +48,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
         Route::get('/taxonomy/{type}', [TaxonomyController::class, 'index'])->whereIn('type', ['projects', 'cohorts', 'events', 'categories']);
     });
     Route::post('/assets/{asset}/download', [AssetController::class, 'download'])->middleware('can:assets.download_original');
+    Route::post('/downloads', DownloadController::class)->middleware('can:assets.download_original');
     Route::middleware('can:assets.edit')->group(function () {
         Route::patch('/assets/{asset}', [AssetController::class, 'update']);
         Route::post('/assets-bulk', [AssetController::class, 'bulk']);

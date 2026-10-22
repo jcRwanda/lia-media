@@ -2,10 +2,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, CopyCheck, FileUp, Pause, Play, RotateCcw, X } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 import { Link } from 'react-router';
+import { useAuth } from '@/auth/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Badge, Card, PageHeader } from '@/components/ui/card';
 import { Field, Input, Select } from '@/components/ui/input';
 import { useLookups } from '@/hooks/useLookups';
+import { api, fieldErrors } from '@/lib/api';
 import { renditionsFor, uploadRenditions } from '@/lib/derivatives';
 import { uploadFile, type Phase, type UploadContext } from '@/lib/uploader';
 import { cn, formatBytes } from '@/lib/utils';
@@ -17,9 +19,14 @@ const label: Record<Phase, string> = { queued: 'Queued', hashing: 'Checking', up
 
 export default function UploadPage() {
     const lookups = useLookups();
+    const { can } = useAuth();
     const qc = useQueryClient();
     const [items, setItems] = useState<Item[]>([]);
     const [ctx, setCtx] = useState<UploadContext & { tagText: string }>({ tagText: '' });
+    const [creating, setCreating] = useState<'projects' | 'events' | 'cohorts' | 'categories' | null>(null);
+    const [draftName, setDraftName] = useState('');
+    const [draftCode, setDraftCode] = useState('');
+    const [createError, setCreateError] = useState('');
     const [drag, setDrag] = useState(false);
     const running = useRef(0);
     const input = useRef<HTMLInputElement>(null);
@@ -60,6 +67,38 @@ export default function UploadPage() {
 
     const lk = lookups.data;
     const num = (v: string) => (v ? Number(v) : null);
+    const canCreate = can('taxonomy.manage');
+    const startCreate = (type: 'projects' | 'events' | 'cohorts' | 'categories') => { setCreating(type); setDraftName(''); setDraftCode(''); setCreateError(''); };
+    const createTaxonomy = async () => {
+        if (!creating || !draftName.trim()) return;
+        setCreateError('');
+        const body = creating === 'events'
+            ? { title: draftName.trim(), project_id: ctx.project_id || null, cohort_id: ctx.cohort_id || null }
+            : creating === 'cohorts'
+                ? { name: draftName.trim(), code: (draftCode || draftName).trim().slice(0, 40), project_id: ctx.project_id || null }
+                : { name: draftName.trim() };
+        try {
+            const res = await api<{ data: { id: number } }>(`/taxonomy/${creating}`, { method: 'POST', json: body });
+            const field = creating === 'projects' ? 'project_id' : creating === 'events' ? 'event_id' : creating === 'cohorts' ? 'cohort_id' : 'category_id';
+            setCtx((c) => ({ ...c, [field]: res.data.id }));
+            setCreating(null);
+            await qc.invalidateQueries({ queryKey: ['lookups'] });
+        } catch (e) {
+            setCreateError(Object.values(fieldErrors(e))[0] || (e as Error).message);
+        }
+    };
+    const creator = (type: 'projects' | 'events' | 'cohorts' | 'categories', label: string) => canCreate ? (
+        creating === type ? (
+            <div className="space-y-1">
+                <div className="flex gap-1">
+                    <Input value={draftName} onChange={(e) => setDraftName(e.target.value)} placeholder={label} aria-label={label} />
+                    <Button size="sm" type="button" onClick={() => void createTaxonomy()}>Add</Button>
+                    <Button size="sm" variant="ghost" type="button" onClick={() => setCreating(null)}>Cancel</Button>
+                </div>
+                {type === 'cohorts' ? <Input value={draftCode} onChange={(e) => setDraftCode(e.target.value)} placeholder="Code (optional)" aria-label="Cohort code" /> : null}
+            </div>
+        ) : <Button variant="link" size="sm" type="button" onClick={() => startCreate(type)}>New {label.toLowerCase()}</Button>
+    ) : null;
     return (
         <>
             <PageHeader title="Upload center" description="Files go straight to private storage, checked by SHA-256. Duplicates are detected before upload; big files resume after a dropped connection." />
@@ -101,14 +140,15 @@ export default function UploadPage() {
                 </div>
                 <Card className="h-fit space-y-3 p-4">
                     <h2 className="text-sm font-semibold">Apply to new uploads</h2>
-                    <Field label="Project"><Select value={ctx.project_id ?? ''} onChange={(e) => setCtx({ ...ctx, project_id: num(e.target.value) })}><option value="">—</option>{lk?.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>
-                    <Field label="Event"><Select value={ctx.event_id ?? ''} onChange={(e) => setCtx({ ...ctx, event_id: num(e.target.value) })}><option value="">—</option>{lk?.events.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}</Select></Field>
-                    <Field label="Cohort"><Select value={ctx.cohort_id ?? ''} onChange={(e) => setCtx({ ...ctx, cohort_id: num(e.target.value) })}><option value="">—</option>{lk?.cohorts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>
-                    <Field label="Category"><Select value={ctx.category_id ?? ''} onChange={(e) => setCtx({ ...ctx, category_id: num(e.target.value) })}><option value="">—</option>{lk?.categories.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>
+                    <Field label="Project"><Select value={ctx.project_id ?? ''} onChange={(e) => setCtx({ ...ctx, project_id: num(e.target.value) })}><option value="">—</option>{lk?.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select>{creator('projects', 'Project')}</Field>
+                    <Field label="Event"><Select value={ctx.event_id ?? ''} onChange={(e) => setCtx({ ...ctx, event_id: num(e.target.value) })}><option value="">—</option>{lk?.events.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}</Select>{creator('events', 'Event')}</Field>
+                    <Field label="Cohort"><Select value={ctx.cohort_id ?? ''} onChange={(e) => setCtx({ ...ctx, cohort_id: num(e.target.value) })}><option value="">—</option>{lk?.cohorts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select>{creator('cohorts', 'Cohort')}</Field>
+                    <Field label="Category"><Select value={ctx.category_id ?? ''} onChange={(e) => setCtx({ ...ctx, category_id: num(e.target.value) })}><option value="">—</option>{lk?.categories.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select>{creator('categories', 'Category')}</Field>
+                    {createError ? <p role="alert" className="text-xs text-lia-700">{createError}</p> : null}
                     <Field label="Add to album"><Select value={ctx.album_id ?? ''} onChange={(e) => setCtx({ ...ctx, album_id: num(e.target.value) })}><option value="">—</option>{lk?.albums.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}</Select></Field>
                     <Field label="Tags (comma separated)"><Input value={ctx.tagText} onChange={(e) => setCtx({ ...ctx, tagText: e.target.value })} placeholder="stage, graduation" /></Field>
                     <Field label="Credit"><Input value={ctx.credit ?? ''} onChange={(e) => setCtx({ ...ctx, credit: e.target.value })} placeholder="Photographer name" /></Field>
-                    <p className="text-xs text-neutral-500">Uploading needs no input: files are dated today, tagged with the archive defaults and filed into today’s day gallery automatically. A project, event, album or extra tags here override or add to those defaults. New uploads start as <strong>unreviewed</strong> and never appear in shares until approved.</p>
+                    <p className="text-xs text-neutral-500">Uploading needs no input: files are dated today, tagged with the archive defaults and filed into today’s day gallery automatically. A project, event, album or extra tags here override or add to those defaults. New uploads start as <strong>unreviewed</strong> and never appear in shares until approved. {canCreate ? 'As an admin you can add a project, event, cohort or category here.' : 'Use an existing project, event, cohort or category. Only an admin can add new ones.'}</p>
                 </Card>
             </div>
         </>

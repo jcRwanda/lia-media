@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { SlidersHorizontal, X } from 'lucide-react';
+import { Download, SlidersHorizontal, X } from 'lucide-react';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { useAuth } from '@/auth/AuthContext';
@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Card, EmptyState, PageHeader } from '@/components/ui/card';
 import { Field, Input, Select } from '@/components/ui/input';
 import { useLookups } from '@/hooks/useLookups';
-import { api } from '@/lib/api';
+import { api, csrfToken, ensureCsrf } from '@/lib/api';
+import { submitZipDownload } from '@/lib/gallery';
 import type { AssetCard, Paginated } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -27,6 +28,18 @@ export default function LibraryPage() {
     const qs = new URLSearchParams(Object.fromEntries(FILTERS.flatMap((f) => (params.get(f) ? [[f, params.get(f)!]] : [])))).toString();
     const q = useQuery({ queryKey: ['assets', qs, page], queryFn: () => api<Paginated<AssetCard>>(`/assets?${qs}&page=${page}`) });
     const set = (k: string, v: string) => { const n = new URLSearchParams(params); v ? n.set(k, v) : n.delete(k); n.delete('page'); setParams(n, { replace: true }); };
+    const canEdit = can('assets.edit');
+    const canDownload = can('assets.download_original');
+    const downloadSelected = async () => {
+        if (selected.length === 1) {
+            const r = await api<{ url: string }>(`/assets/${selected[0]}/download`, { method: 'POST' });
+            window.location.href = r.url;
+            return;
+        }
+        await ensureCsrf();
+        const token = csrfToken();
+        if (token) submitZipDownload('/api/downloads', token, selected);
+    };
     const bulk = useMutation({
         mutationFn: () => api('/assets-bulk', { method: 'POST', json: { uuids: selected, album_uuid: bulkAlbum || null, add_tags: bulkTags.split(',').map((t) => t.trim()).filter(Boolean) } }),
         onSuccess: () => { setSelected([]); setBulkTags(''); qc.invalidateQueries({ queryKey: ['assets'] }); qc.invalidateQueries({ queryKey: ['albums'] }); },
@@ -66,14 +79,16 @@ export default function LibraryPage() {
                         <Card className="mb-3 flex flex-wrap items-end gap-2 border-lia-200 bg-lia-50/50 p-3">
                             <span className="text-sm font-medium">{selected.length} selected</span>
                             {can('albums.manage') ? <Select className="h-9 w-48" value={bulkAlbum} onChange={(e) => setBulkAlbum(e.target.value)} aria-label="Add to album"><option value="">Add to album…</option>{lk?.albums.map((a) => <option key={a.uuid} value={a.uuid}>{a.title}</option>)}</Select> : null}
-                            {can('assets.edit') ? <Input className="h-9 w-48" placeholder="Add tags" value={bulkTags} onChange={(e) => setBulkTags(e.target.value)} /> : null}
-                            {can('assets.edit') ? <Button size="sm" disabled={bulk.isPending || (!bulkAlbum && !bulkTags)} onClick={() => bulk.mutate()}>Apply</Button> : null}
+                            {canEdit ? <Input className="h-9 w-48" placeholder="Add tags" value={bulkTags} onChange={(e) => setBulkTags(e.target.value)} /> : null}
+                            {canEdit ? <Button size="sm" disabled={bulk.isPending || (!bulkAlbum && !bulkTags)} onClick={() => bulk.mutate()}>Apply</Button> : null}
+                            {canDownload ? <Button size="sm" onClick={() => void downloadSelected()}><Download className="h-4 w-4" />Download</Button> : null}
+                            <Button size="sm" variant="ghost" onClick={() => setSelected(q.data?.data.map((a) => a.uuid) ?? [])}>All on page</Button>
                             <Button size="sm" variant="ghost" onClick={() => setSelected([])}>Clear</Button>
                         </Card>
                     ) : null}
                     {q.data && q.data.data.length === 0 ? <EmptyState title="Nothing found">Try fewer filters, or upload new media.</EmptyState> : null}
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-                        {(q.data?.data ?? []).map((a) => <AssetTile key={a.uuid} asset={a} selected={selected.includes(a.uuid)} onToggle={can('assets.edit') ? () => setSelected((s) => (s.includes(a.uuid) ? s.filter((x) => x !== a.uuid) : [...s, a.uuid])) : undefined} />)}
+                        {(q.data?.data ?? []).map((a) => <AssetTile key={a.uuid} asset={a} selected={selected.includes(a.uuid)} onToggle={canEdit || canDownload ? () => setSelected((s) => (s.includes(a.uuid) ? s.filter((x) => x !== a.uuid) : [...s, a.uuid])) : undefined} />)}
                     </div>
                     {q.data && q.data.last_page > 1 ? (
                         <div className="mt-4 flex items-center gap-2 text-sm">

@@ -102,6 +102,16 @@ class UploadTest extends TestCase
         $this->assertArrayNotHasKey($this->keyOf($b['upload']['uuid']), $this->r2->objects);
     }
 
+    public function test_follow_up_request_does_not_treat_a_new_session_as_expired(): void
+    {
+        config(['media.multipart_threshold' => 1]);
+        $res = $this->init('hello world', ['filename' => 'film.mp4', 'mime_type' => 'video/mp4'])->assertCreated()->json();
+        $this->travel(5)->seconds();
+
+        $this->actingAs($this->mm)->postJson("/api/uploads/{$res['upload']['uuid']}/parts", ['part_numbers' => [1]])->assertOk();
+        $this->assertTrue(UploadSession::first()->expires_at->isFuture());
+    }
+
     public function test_multipart_resume_complete_and_server_checksum_job(): void
     {
         config(['media.multipart_threshold' => 999, 'media.part_size' => 400]);
