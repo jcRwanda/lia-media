@@ -9,6 +9,7 @@ use App\Mail\MaterialRequestStatusMail;
 use App\Models\MaterialRequest;
 use App\Models\MaterialRequestItem;
 use App\Services\MaterialRequestAuditService;
+use App\Services\MaterialRequestService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -18,7 +19,7 @@ use Illuminate\Validation\ValidationException;
 
 class MaterialRequestController extends Controller
 {
-    public function __construct(private MaterialRequestAuditService $audit) {}
+    public function __construct(private MaterialRequestAuditService $audit, private MaterialRequestService $files) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -51,11 +52,14 @@ class MaterialRequestController extends Controller
             abort(403);
         }
 
-        $materialRequest->load(['items.equipmentItem', 'audits.actor']);
+        $materialRequest->load(['items.equipmentItem', 'audits.actor', 'cohort:id,name,code']);
 
-        $materialRequest->setAttribute('is_overdue', $materialRequest->isOverdue());
+        $payload = $materialRequest->toArray();
+        $payload['is_overdue'] = $materialRequest->isOverdue();
+        $payload['id_document_url'] = $this->files->presign($materialRequest->id_document_path, $materialRequest->id_document_name);
+        $payload['signature_url'] = $this->files->presign($materialRequest->signature_path, 'signature.png');
 
-        return response()->json(['request' => $materialRequest]);
+        return response()->json(['request' => $payload]);
     }
 
     public function approve(Request $request, MaterialRequest $materialRequest): JsonResponse
@@ -310,6 +314,33 @@ class MaterialRequestController extends Controller
         }
 
         return response()->json(['request' => $materialRequest->load('items.equipmentItem')]);
+    }
+
+    public function idDocument(Request $request, MaterialRequest $materialRequest): JsonResponse
+    {
+        if (! $request->user()?->canDo('material-requests.view')) {
+            abort(403);
+        }
+        if (! $materialRequest->id_document_path) {
+            abort(404);
+        }
+
+        return response()->json([
+            'url' => $this->files->presign($materialRequest->id_document_path, $materialRequest->id_document_name),
+            'name' => $materialRequest->id_document_name,
+        ]);
+    }
+
+    public function signature(Request $request, MaterialRequest $materialRequest): JsonResponse
+    {
+        if (! $request->user()?->canDo('material-requests.view')) {
+            abort(403);
+        }
+        if (! $materialRequest->signature_path) {
+            abort(404);
+        }
+
+        return response()->json(['url' => $this->files->presign($materialRequest->signature_path, 'signature.png')]);
     }
 
     public function audits(Request $request, MaterialRequest $materialRequest): JsonResponse

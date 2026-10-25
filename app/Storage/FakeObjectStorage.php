@@ -26,6 +26,12 @@ class FakeObjectStorage implements ObjectStorage
         return ['url' => "https://fake-r2.test/{$key}?X-Amz-Expires={$ttl}", 'headers' => $headers];
     }
 
+    public function put(string $key, string $contents, string $contentType): void
+    {
+        $this->calls[] = ['put', $key];
+        $this->objects[$key] = ['body' => $contents, 'content_type' => $contentType, 'sha256_base64' => base64_encode(hash('sha256', $contents, true))];
+    }
+
     /** Simulate the browser PUT. Returns false when the signed checksum does not match (S3 BadDigest). */
     public function simulatePut(string $key, string $body, string $contentType, ?string $sha256Base64 = null): bool
     {

@@ -11,6 +11,9 @@ interface ObjectStorage
     /** @return array{url: string, headers: array<string, string>} */
     public function presignPut(string $key, string $contentType, int $size, int $ttl, ?string $sha256Base64 = null): array;
 
+    /** Store a small server-side object (signatures, ID documents) privately. */
+    public function put(string $key, string $contents, string $contentType): void;
+
     public function createMultipart(string $key, string $contentType): string;
 
     public function presignPart(string $key, string $uploadId, int $partNumber, int $ttl): string;

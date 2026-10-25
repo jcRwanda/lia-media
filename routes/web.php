@@ -13,7 +13,9 @@ Route::get('/request-materials', function () {
     $response = response()->view('request-materials', [
         'type' => $type,
         'bilingualTerms' => config('material-requests.bilingual_terms'),
+        'consentDeclaration' => config('material-requests.consent_declaration'),
         'fieldsConfig' => config('material-requests.fields'),
+        'labels' => config('material-requests.labels'),
         'requesterTypes' => config('material-requests.requester_types'),
     ]);
     $response->headers->set('Content-Security-Policy', 'frame-ancestors '.$frameAncestors);

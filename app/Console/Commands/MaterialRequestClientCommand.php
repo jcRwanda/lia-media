@@ -25,6 +25,7 @@ class MaterialRequestClientCommand extends Command
         $client = ApiClient::query()->create([
             'name' => $name,
             'key_hash' => Hash::make($key),
+            'prefill_secret' => $key,
             'allowed_origin' => $origin,
             'active' => true,
         ]);
@@ -34,8 +35,8 @@ class MaterialRequestClientCommand extends Command
         if ($origin) {
             $this->line('Allowed origin: '.$origin);
         }
-        $this->line('X-LIA-Key: '.$key);
-        $this->warn('Store this key securely; it will not be shown again.');
+        $this->line('X-LIA-Key / prefill secret: '.$key);
+        $this->warn('Store this key securely; it is used for API calls and to sign prefill tokens, and will not be shown again.');
 
         return self::SUCCESS;
     }

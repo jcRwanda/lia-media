@@ -40,5 +40,6 @@ class AppServiceProvider extends ServiceProvider
         ]);
         RateLimiter::for('api', fn (Request $r) => Limit::perMinute(240)->by($r->user()?->id ?: $r->ip()));
         RateLimiter::for('share', fn (Request $r) => Limit::perMinute(120)->by($r->ip()));
+        RateLimiter::for('material-prefill', fn (Request $r) => Limit::perMinute(10)->by($r->ip()));
     }
 }

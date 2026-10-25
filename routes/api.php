@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\DerivativeController;
 use App\Http\Controllers\Api\EquipmentItemController;
 use App\Http\Controllers\Api\LookupController;
 use App\Http\Controllers\Api\MaterialRequestController;
+use App\Http\Controllers\Api\MaterialRequestPrefillController;
 use App\Http\Controllers\Api\MaterialRequestPublicController;
 use App\Http\Controllers\Api\PublicationController;
 use App\Http\Controllers\Api\PublicShareController;
@@ -29,6 +30,9 @@ Route::middleware(['material.cors', 'throttle:api'])->prefix('v1/material-reques
     Route::get('/config', [MaterialRequestPublicController::class, 'config']);
     Route::post('/submit', [MaterialRequestPublicController::class, 'store'])->middleware('throttle:api');
     Route::post('/status', [MaterialRequestPublicController::class, 'status'])->middleware('throttle:api');
+    Route::get('/prefill', [MaterialRequestPrefillController::class, 'token'])->middleware('throttle:material-prefill');
+    Route::post('/prefill/start', [MaterialRequestPrefillController::class, 'startOtp'])->middleware('throttle:material-prefill');
+    Route::post('/prefill/verify', [MaterialRequestPrefillController::class, 'verifyOtp'])->middleware('throttle:material-prefill');
 });
 
 Route::middleware(['material.cors', 'material.api_key', 'throttle:api'])->prefix('v1/material-requests')->group(function () {
@@ -153,6 +157,8 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
             Route::get('/material-requests', [MaterialRequestController::class, 'index']);
             Route::get('/material-requests/{materialRequest}', [MaterialRequestController::class, 'show']);
             Route::get('/material-requests/{materialRequest}/audits', [MaterialRequestController::class, 'audits']);
+            Route::get('/material-requests/{materialRequest}/id-document', [MaterialRequestController::class, 'idDocument']);
+            Route::get('/material-requests/{materialRequest}/signature', [MaterialRequestController::class, 'signature']);
         });
         Route::middleware('can:material-requests.manage')->group(function () {
             Route::post('/material-requests/{materialRequest}/approve', [MaterialRequestController::class, 'approve']);

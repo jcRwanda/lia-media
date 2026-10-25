@@ -81,12 +81,37 @@ export default function MaterialRequestDetailPage() {
                     <div>{data.email}</div>
                     <div>{data.phone}</div>
                     <div>Type: {data.requester_type}</div>
+                    <div>Project: {data.project_name || '—'}</div>
+                    <div>Cohort: {data.cohort?.name || data.program_cohort || '—'}</div>
                 </div>
                 <div className="border rounded p-3 space-y-1">
                     <div className="font-medium">Dates</div>
-                    <div>Needed from: {data.needed_from}</div>
-                    <div>Return by: {data.return_by}</div>
-                    <div>Purpose: {data.purpose_project_description}</div>
+                    <div>Pick-up: {data.needed_from}</div>
+                    <div>Return: {data.return_by}</div>
+                    <div>Summary: {data.purpose_project_description}</div>
+                    <div>Location: {[data.project_cell, data.project_sector, data.project_district, data.project_province].filter(Boolean).join(', ') || '—'}</div>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div className="border rounded p-3 space-y-1">
+                    <div className="font-medium">Residential address</div>
+                    <div>{[data.village_res, data.cell_res, data.sector_res, data.district_res, data.province_res].filter(Boolean).join(', ') || '—'}</div>
+                    <div>Emergency: {data.emergency_contact_name} ({data.relationship || '—'})</div>
+                    <div>{data.emergency_contact_phone}</div>
+                </div>
+                <div className="border rounded p-3 space-y-1">
+                    <div className="font-medium">Documents (staff only)</div>
+                    {data.id_document_url ? (
+                        <a className="text-blue-600 underline" href={data.id_document_url} target="_blank" rel="noreferrer">View ID document</a>
+                    ) : <div className="text-neutral-500">No ID uploaded</div>}
+                    {data.signature_url ? (
+                        <div>
+                            <div>Signature {data.signature_date ? `(${data.signature_date})` : ''}</div>
+                            <img src={data.signature_url} alt="Signature" className="mt-1 h-20 rounded border bg-white" />
+                        </div>
+                    ) : null}
+                    <div>Consent: {data.consent_declaration ? 'Accepted' : 'Not accepted'}</div>
                 </div>
             </div>
 

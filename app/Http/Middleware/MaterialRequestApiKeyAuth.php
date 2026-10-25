@@ -13,7 +13,7 @@ class MaterialRequestApiKeyAuth
     /**
      * Handle an incoming request.
      *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
+     * @param  Closure(Request): (Response)  $next
      */
     public function handle(Request $request, Closure $next): Response
     {
@@ -47,6 +47,15 @@ class MaterialRequestApiKeyAuth
         }
 
         if (empty($allowed)) {
+            return $next($request);
+        }
+
+        // The hosted form calls its own origin; browsers do not send Origin on same-origin GETs.
+        $refererHost = parse_url((string) $request->headers->get('referer'), PHP_URL_HOST);
+        if ($refererHost && $refererHost === $request->getHost()) {
+            return $next($request);
+        }
+        if ($request->headers->get('sec-fetch-site') === 'same-origin') {
             return $next($request);
         }
 

@@ -269,3 +269,149 @@ php artisan material-requests:client "Test" --origin=https://example.com  # test
 php artisan test
 npm run build
 ```
+
+---
+
+# Deploy notes — aligned request form, portal prefill & private ID/signature
+
+Branch: `feature/material-requests` (follow-up).
+
+## What changed
+- **The hosted form now follows the exact question list** and is driven by `config/material-requests.php`
+  (field groups + bilingual Kinyarwanda/English labels): Full Names, Phone Number, Email, Project Name,
+  Residential Address (Province → District → Sector → Cell → Village), Emergency Contact Name/Phone,
+  Relationship, Project Summary, Equipment Requested (catalog multi-select with quantity), Start Date
+  (Pick-up) / End Date (Return), Project Location (Province → District → Sector → Cell with a
+  **Same as residential** toggle), Select Cohort (trainee/alumni only, from `cohorts`), Terms & Credit
+  agreement, Consent & Declaration, Upload Your ID, and Signature & Date.
+- **Rwanda administrative divisions** are bundled at `public/data/rwanda-divisions.json` (compact JSON from
+  `ngabovictor/Rwanda`) for the two cascading selects. Village has a free-text fallback ("Other / Ikindi").
+- **ID upload** is required for `client` and `alumni` (optional for `trainee`), accepts images or PDF, and is
+  written server-side to private object storage (R2 in production) under `material-requests/id-documents/`.
+  ID files are never public or linked in the API; staff see a short-lived presigned URL, and only users with
+  `material-requests.view` can fetch it (`GET /api/material-requests/{id}/id-document`).
+- **Signature pad**: the form captures a drawn PNG on canvas, posts it with the request, and the server stores it
+  privately under `material-requests/signatures/`. `signature_date` is always set to the server's current date.
+  Staff can view it through `GET /api/material-requests/{id}/signature` (also gated by `material-requests.view`).
+- **Project location helper**: checking *Same as residential* copies the residential Province/District/Sector/Cell;
+  the API also honours `project_same_as_residential` when the fields are omitted/disabled.
+- **Signed portal prefill**:
+  - Hosts can put a signed token in the iframe URL (`/request-materials?type=alumni&prefill=<token>`) or pass it
+    through the JS embed `prefill` option.
+  - Token format is `v1.<base64url(payload)>.<base64url(HMAC-SHA256(payload, client secret))>`, where the client
+    secret is the plain `X-LIA-Key` shown by `php artisan material-requests:client` (also stored encrypted as
+    `api_clients.prefill_secret` so the server can verify it). Payload supports `full_name` (or `name`), `email`,
+    `phone`, `type` (or `requester_type`), `cohort` (code/name/id), and `student_alumni_id` (or `student_id`).
+    Tokens expire after `MATERIAL_REQUEST_PREFILL_TTL` seconds (default 900).
+  - Prefilled identity fields are **locked** in the form. The endpoint `GET /api/v1/material-requests/prefill?token=...`
+    verifies the signature before returning anything.
+- **Returning requester prefill** (only after proof): a button beside the email/phone fields sends a one-time code
+  to the email on the requester's last matching request (`POST /api/v1/material-requests/prefill/start`).
+  `POST /api/v1/material-requests/prefill/verify` then returns the last residential address, emergency contact and
+  an **ID reuse token**. The token is bound to the submitted email/phone and lets the new request reuse the old
+  private ID without exposing the file. Nothing is returned publicly without a valid OTP or signed token.
+- **Data model**: `material_requests` gained `project_name`, `village_res`, `relationship`, `consent_declaration`,
+  `cohort_id`, `id_document_path`, `id_document_mime`, `id_document_name`, `signature_path`, and `signature_date`.
+  `api_clients` gained encrypted `prefill_secret`.
+- **Staff UI**: request detail now shows project/cohort/address/relationship, consent, the ID document link,
+  signature image and signature date.
+- **Tests** cover the exact config/labels, signed prefill tokens, the OTP + ID reuse flow, required ID rules,
+  cohort validation, date ordering, same-as-residential copying, auto signature date, and staff-only document links.
+
+## Database
+```bash
+php artisan migrate --force
+```
+Adds the columns above. Existing requests keep working; new columns are nullable except `consent_declaration`
+(default `false`). Existing API clients created before this deploy have no `prefill_secret`; re-create them (or backfill
+the column with the original key if you still have it) to enable signed prefill.
+
+## Environment variables
+Optional tuning (defaults shown):
+```env
+MATERIAL_REQUEST_PREFILL_TTL=900
+MATERIAL_REQUEST_OTP_TTL=600
+MATERIAL_REQUEST_ID_MAX_BYTES=10485760
+```
+Keep `MEDIA_DISK=r2` and the existing `R2_*` credentials in production. ID documents and signatures use the same private
+R2 bucket/prefix as the archive, never the public disk. Mail must be configured for returning-requester OTP codes
+(the same `MAIL_*` settings used by the other material-request emails).
+
+## Signing a prefill token
+The portal signs the payload with its API key (the same value used for `X-LIA-Key`).
+
+PHP:
+```php
+$payload = [
+    'client_id' => 1,
+    'full_name' => $user->name,
+    'email' => $user->email,
+    'phone' => $user->phone,
+    'type' => 'alumni',
+    'cohort' => 'COH-2026-A',
+    'student_alumni_id' => $user->alumni_id,
+];
+$encoded = rtrim(strtr(base64_encode(json_encode($payload)), '+/', '-_'), '=');
+$signature = rtrim(strtr(base64_encode(hash_hmac('sha256', $encoded, $apiKey, true)), '+/', '-_'), '=');
+$token = 'v1.'.$encoded.'.'.$signature;
+$url = 'https://media.loveinarts.com/request-materials?type=alumni&prefill='.urlencode($token);
+```
+
+JavaScript (browser/server, Web Crypto):
+```js
+const enc = new TextEncoder();
+const b64url = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes)))
+  .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const payload = b64url(enc.encode(JSON.stringify({
+  client_id: 1,
+  name: 'Portal Student',
+  email: 'student@example.com',
+  phone: '0780000000',
+  type: 'trainee',
+  cohort: 'COH-2026-A',
+  student_id: 'STD-42',
+})));
+const key = await crypto.subtle.importKey('raw', enc.encode(apiKey), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+const sig = b64url(await crypto.subtle.sign('HMAC', key, enc.encode(payload)));
+const token = `v1.${payload}.${sig}`;
+```
+
+Iframe:
+```html
+<iframe src="https://media.loveinarts.com/request-materials?type=alumni&prefill=TOKEN"
+        width="100%" height="1600" style="border:0" allow="camera"></iframe>
+```
+
+JS embed:
+```html
+<div id="lia-mr-embed"></div>
+<script src="https://media.loveinarts.com/embed/material-request.js"></script>
+<script>
+  LIA.materialRequest({ target: '#lia-mr-embed', type: 'alumni', prefill: TOKEN, height: 1600 });
+</script>
+```
+`data-*` auto-mount is also supported: `<script src=".../embed/material-request.js" data-target="#lia-mr-embed" data-type="alumni">`.
+
+## Post-deploy checks
+```bash
+php artisan test
+npm run build
+```
+Smoke test:
+- Open `/request-materials?type=client`; Province → District → Sector → Cell → Village cascades and Village accepts free text.
+- Select equipment with quantities; an end date before the pick-up date is refused; signature and date are captured.
+- Submit as a client without an ID is refused; with an image/PDF it succeeds. The file is only reachable from the
+  staff request detail page as a short-lived link.
+- Check *Same as residential* and confirm the project location fields copy across.
+- Create a signed token from the portal key and open the iframe link: name/email/phone/type/cohort/student ID are filled
+  and locked. A tampered or expired token returns 422.
+- Enter the email/phone of an earlier request and use *Use my last request details*: the OTP email arrives, the code
+  fills address + emergency contact, and submitting keeps the previous private ID attached.
+
+## Rollback
+```bash
+php artisan migrate:rollback --step=2   # drops the new api_clients and material_requests columns
+```
+Rolling back removes the stored private ID/signature references and prefill secrets. The R2 objects themselves are not
+deleted by the migration; remove the `material-requests/id-documents/` and `material-requests/signatures/` prefixes
+manually if required.

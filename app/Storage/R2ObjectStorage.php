@@ -56,6 +56,16 @@ class R2ObjectStorage implements ObjectStorage
         return ['url' => $url, 'headers' => $headers];
     }
 
+    public function put(string $key, string $contents, string $contentType): void
+    {
+        $this->client()->putObject([
+            'Bucket' => $this->bucket(),
+            'Key' => $key,
+            'Body' => $contents,
+            'ContentType' => $contentType,
+        ]);
+    }
+
     public function createMultipart(string $key, string $contentType): string
     {
         return (string) $this->client()->createMultipartUpload(['Bucket' => $this->bucket(), 'Key' => $key, 'ContentType' => $contentType])['UploadId'];

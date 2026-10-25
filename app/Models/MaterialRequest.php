@@ -20,14 +20,17 @@ class MaterialRequest extends Model
         'full_name',
         'phone',
         'email',
+        'project_name',
         'national_id',
         'province_res',
         'district_res',
         'sector_res',
         'cell_res',
+        'village_res',
         'residential_address',
         'emergency_contact_name',
         'emergency_contact_phone',
+        'relationship',
         'purpose_project_description',
         'project_province',
         'project_district',
@@ -37,13 +40,20 @@ class MaterialRequest extends Model
         'needed_from',
         'return_by',
         'terms_accepted',
+        'consent_declaration',
         'program_cohort',
+        'cohort_id',
         'graduation_completion_year',
         'student_alumni_id',
         'project_title',
         'project_type',
         'expected_outcome',
         'portfolio_social_link',
+        'id_document_path',
+        'id_document_mime',
+        'id_document_name',
+        'signature_path',
+        'signature_date',
         'status',
         'review_note',
         'reviewed_by',
@@ -60,8 +70,10 @@ class MaterialRequest extends Model
     {
         return [
             'terms_accepted' => 'boolean',
+            'consent_declaration' => 'boolean',
             'needed_from' => 'date',
             'return_by' => 'date',
+            'signature_date' => 'date',
             'reviewed_at' => 'datetime',
             'approved_at' => 'datetime',
             'rejected_at' => 'datetime',
@@ -84,6 +96,11 @@ class MaterialRequest extends Model
     public function items(): HasMany
     {
         return $this->hasMany(MaterialRequestItem::class);
+    }
+
+    public function cohort(): BelongsTo
+    {
+        return $this->belongsTo(Cohort::class);
     }
 
     public function reviewedBy(): BelongsTo
