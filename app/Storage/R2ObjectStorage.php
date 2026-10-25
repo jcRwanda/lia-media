@@ -121,7 +121,7 @@ class R2ObjectStorage implements ObjectStorage
     {
         $args = ['Bucket' => $this->bucket(), 'Key' => $key];
         if ($downloadName) {
-            $safe = str_replace(['"', "\\", "\r", "\n"], '', $downloadName);
+            $safe = str_replace(['"', '\\', "\r", "\n"], '', $downloadName);
             $args['ResponseContentDisposition'] = ($inline ? 'inline' : 'attachment').'; filename="'.$safe.'"';
         }
         $cmd = $this->client()->getCommand('GetObject', $args);

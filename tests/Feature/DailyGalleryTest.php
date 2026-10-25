@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\Album;
 use App\Models\Asset;
 use App\Models\User;
+use App\Services\DailyGalleryService;
+use App\Services\DefaultAlbumService;
 use App\Services\SettingsService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -118,7 +120,7 @@ class DailyGalleryTest extends TestCase
 
     public function test_album_index_lists_day_galleries_newest_first_and_flags_today(): void
     {
-        $galleries = app(\App\Services\DailyGalleryService::class);
+        $galleries = app(DailyGalleryService::class);
         $galleries->forDay($this->today()->subDays(2));
         $galleries->forDay($this->today());
         $galleries->forDay($this->today()->subDay());
@@ -138,9 +140,9 @@ class DailyGalleryTest extends TestCase
 
     public function test_auto_managed_albums_cannot_be_deleted(): void
     {
-        $galleries = app(\App\Services\DailyGalleryService::class);
+        $galleries = app(DailyGalleryService::class);
         $day = $galleries->forDay($this->today());
-        $default = app(\App\Services\DefaultAlbumService::class)->ensure();
+        $default = app(DefaultAlbumService::class)->ensure();
 
         $this->actingAs($this->mm)->deleteJson("/api/albums/{$day->uuid}")->assertStatus(422);
         $this->actingAs($this->mm)->deleteJson("/api/albums/{$default->uuid}")->assertStatus(422);

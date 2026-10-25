@@ -58,9 +58,28 @@ class Album extends Model
         return $this->belongsToMany(Asset::class)->withPivot('position', 'added_by', 'added_at')->orderBy('album_asset.position');
     }
 
-    public function cover(): BelongsTo { return $this->belongsTo(Asset::class, 'cover_asset_id'); }
-    public function project(): BelongsTo { return $this->belongsTo(Project::class); }
-    public function event(): BelongsTo { return $this->belongsTo(Event::class); }
-    public function cohort(): BelongsTo { return $this->belongsTo(Cohort::class); }
-    public function creator(): BelongsTo { return $this->belongsTo(User::class, 'created_by'); }
+    public function cover(): BelongsTo
+    {
+        return $this->belongsTo(Asset::class, 'cover_asset_id');
+    }
+
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(Project::class);
+    }
+
+    public function event(): BelongsTo
+    {
+        return $this->belongsTo(Event::class);
+    }
+
+    public function cohort(): BelongsTo
+    {
+        return $this->belongsTo(Cohort::class);
+    }
+
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
 }

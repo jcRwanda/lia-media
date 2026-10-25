@@ -45,7 +45,18 @@ class ShareLink extends Model
         return $this->shareable_type === 'album' ? Album::query()->find($this->shareable_id) : Asset::query()->find($this->shareable_id);
     }
 
-    public function recipients(): HasMany { return $this->hasMany(ShareRecipient::class); }
-    public function grants(): HasMany { return $this->hasMany(AccessGrant::class); }
-    public function creator(): BelongsTo { return $this->belongsTo(User::class, 'created_by'); }
+    public function recipients(): HasMany
+    {
+        return $this->hasMany(ShareRecipient::class);
+    }
+
+    public function grants(): HasMany
+    {
+        return $this->hasMany(AccessGrant::class);
+    }
+
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
 }

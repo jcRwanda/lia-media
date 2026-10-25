@@ -60,16 +60,63 @@ class Asset extends Model
         return in_array($this->review_state, self::SHAREABLE_STATES, true) && $this->consent_status !== 'withdrawn';
     }
 
-    public function derivatives(): HasMany { return $this->hasMany(AssetDerivative::class); }
-    public function tags(): BelongsToMany { return $this->belongsToMany(Tag::class); }
-    public function albums(): BelongsToMany { return $this->belongsToMany(Album::class)->withPivot('position'); }
-    public function people(): BelongsToMany { return $this->belongsToMany(Person::class)->withPivot('consent_record_id'); }
-    public function publications(): HasMany { return $this->hasMany(PublicationUsage::class); }
-    public function reviewEvents(): HasMany { return $this->hasMany(ReviewEvent::class); }
-    public function uploader(): BelongsTo { return $this->belongsTo(User::class, 'uploaded_by'); }
-    public function reviewer(): BelongsTo { return $this->belongsTo(User::class, 'reviewed_by'); }
-    public function project(): BelongsTo { return $this->belongsTo(Project::class); }
-    public function cohort(): BelongsTo { return $this->belongsTo(Cohort::class); }
-    public function event(): BelongsTo { return $this->belongsTo(Event::class); }
-    public function category(): BelongsTo { return $this->belongsTo(Category::class); }
+    public function derivatives(): HasMany
+    {
+        return $this->hasMany(AssetDerivative::class);
+    }
+
+    public function tags(): BelongsToMany
+    {
+        return $this->belongsToMany(Tag::class);
+    }
+
+    public function albums(): BelongsToMany
+    {
+        return $this->belongsToMany(Album::class)->withPivot('position');
+    }
+
+    public function people(): BelongsToMany
+    {
+        return $this->belongsToMany(Person::class)->withPivot('consent_record_id');
+    }
+
+    public function publications(): HasMany
+    {
+        return $this->hasMany(PublicationUsage::class);
+    }
+
+    public function reviewEvents(): HasMany
+    {
+        return $this->hasMany(ReviewEvent::class);
+    }
+
+    public function uploader(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'uploaded_by');
+    }
+
+    public function reviewer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(Project::class);
+    }
+
+    public function cohort(): BelongsTo
+    {
+        return $this->belongsTo(Cohort::class);
+    }
+
+    public function event(): BelongsTo
+    {
+        return $this->belongsTo(Event::class);
+    }
+
+    public function category(): BelongsTo
+    {
+        return $this->belongsTo(Category::class);
+    }
 }

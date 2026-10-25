@@ -1,4 +1,4 @@
-import { Archive, BarChart3, FolderTree, Images, LayoutDashboard, LogOut, Menu, ScrollText, Settings, Share2, ShieldCheck, Upload, Users, X } from 'lucide-react';
+import { Archive, BarChart3, ClipboardList, FolderOpen, FolderTree, Images, LayoutDashboard, LogOut, Menu, ScrollText, Settings, Share2, ShieldCheck, Upload, Users, X } from 'lucide-react';
 import { useState } from 'react';
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router';
 import { useAuth } from '@/auth/AuthContext';
@@ -11,6 +11,8 @@ const nav = [
     { to: '/albums', label: 'Albums', icon: Archive, ability: 'library.view' },
     { to: '/review', label: 'Review', icon: ShieldCheck, ability: 'review.approve' },
     { to: '/shares', label: 'Share links', icon: Share2, ability: 'shares.manage' },
+    { to: '/material-requests', label: 'Material Requests', icon: ClipboardList, ability: 'material-requests.view' },
+    { to: '/equipment-inventory', label: 'Inventory', icon: FolderOpen, ability: 'equipment.manage' },
     { to: '/taxonomy', label: 'Projects & events', icon: FolderTree, ability: 'library.view' },
     { to: '/storage', label: 'Storage', icon: BarChart3, ability: 'dashboard.view' },
     { to: '/admin/users', label: 'Users', icon: Users, ability: 'users.manage' },

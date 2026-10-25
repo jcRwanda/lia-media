@@ -6,11 +6,16 @@ namespace App\Support;
 final class Roles
 {
     public const ADMIN = 'admin';
+
     public const MULTIMEDIA = 'multimedia';
+
     public const COMMUNICATIONS = 'communications';
+
     public const MANAGEMENT = 'management';
 
-    public const ALL = [self::ADMIN, self::MULTIMEDIA, self::COMMUNICATIONS, self::MANAGEMENT];
+    public const STOREKEEPER = 'storekeeper';
+
+    public const ALL = [self::ADMIN, self::MULTIMEDIA, self::COMMUNICATIONS, self::MANAGEMENT, self::STOREKEEPER];
 
     /** @var array<string, list<string>> */
     public const ABILITIES = [
@@ -30,6 +35,11 @@ final class Roles
         'audit.view' => [self::MANAGEMENT],
         'users.manage' => [],
         'settings.manage' => [],
+        'material-requests.view' => [self::COMMUNICATIONS, self::MANAGEMENT, self::STOREKEEPER],
+        'material-requests.manage' => [self::COMMUNICATIONS, self::MANAGEMENT],
+        'material-requests.issue' => [self::STOREKEEPER, self::MANAGEMENT, self::COMMUNICATIONS],
+        'material-requests.return' => [self::STOREKEEPER, self::MANAGEMENT, self::COMMUNICATIONS],
+        'equipment.manage' => [self::STOREKEEPER, self::MANAGEMENT, self::COMMUNICATIONS],
     ];
 
     public static function allows(?string $role, string $ability): bool

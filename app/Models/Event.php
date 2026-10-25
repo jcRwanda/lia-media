@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Event extends Model
@@ -16,7 +15,18 @@ class Event extends Model
         return ['occurred_on' => 'date', 'ends_on' => 'date'];
     }
 
-    public function project(): BelongsTo { return $this->belongsTo(Project::class); }
-    public function cohort(): BelongsTo { return $this->belongsTo(Cohort::class); }
-    public function assets(): HasMany { return $this->hasMany(Asset::class); }
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(Project::class);
+    }
+
+    public function cohort(): BelongsTo
+    {
+        return $this->belongsTo(Cohort::class);
+    }
+
+    public function assets(): HasMany
+    {
+        return $this->hasMany(Asset::class);
+    }
 }

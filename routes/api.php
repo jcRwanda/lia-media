@@ -7,7 +7,10 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ConsentController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DerivativeController;
+use App\Http\Controllers\Api\EquipmentItemController;
 use App\Http\Controllers\Api\LookupController;
+use App\Http\Controllers\Api\MaterialRequestController;
+use App\Http\Controllers\Api\MaterialRequestPublicController;
 use App\Http\Controllers\Api\PublicationController;
 use App\Http\Controllers\Api\PublicShareController;
 use App\Http\Controllers\Api\ReviewController;
@@ -19,6 +22,21 @@ use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:login');
+
+// Public API (versioned) for material requests
+Route::middleware(['material.cors', 'throttle:api'])->prefix('v1/material-requests')->group(function () {
+    Route::get('/catalog', [MaterialRequestPublicController::class, 'catalog']);
+    Route::get('/config', [MaterialRequestPublicController::class, 'config']);
+    Route::post('/submit', [MaterialRequestPublicController::class, 'store'])->middleware('throttle:api');
+    Route::post('/status', [MaterialRequestPublicController::class, 'status'])->middleware('throttle:api');
+});
+
+Route::middleware(['material.cors', 'material.api_key', 'throttle:api'])->prefix('v1/material-requests')->group(function () {
+    Route::get('/catalog', [MaterialRequestPublicController::class, 'catalog']);
+    Route::get('/config', [MaterialRequestPublicController::class, 'config']);
+    Route::post('/submit', [MaterialRequestPublicController::class, 'store']);
+    Route::post('/status', [MaterialRequestPublicController::class, 'status']);
+});
 
 // Visitor share endpoints (no staff session).
 Route::middleware('throttle:share')->prefix('s/{token}')->where(['token' => '[A-Za-z0-9_-]{20,64}'])->group(function () {
@@ -129,5 +147,31 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
             Route::post('/assets/{asset}/derivatives/{type}/complete', [DerivativeController::class, 'complete']);
         });
         Route::get('/audit-logs', [AuditLogController::class, 'index'])->middleware('can:audit.view');
+
+        // Material requests (staff)
+        Route::middleware('can:material-requests.view')->group(function () {
+            Route::get('/material-requests', [MaterialRequestController::class, 'index']);
+            Route::get('/material-requests/{materialRequest}', [MaterialRequestController::class, 'show']);
+            Route::get('/material-requests/{materialRequest}/audits', [MaterialRequestController::class, 'audits']);
+        });
+        Route::middleware('can:material-requests.manage')->group(function () {
+            Route::post('/material-requests/{materialRequest}/approve', [MaterialRequestController::class, 'approve']);
+            Route::post('/material-requests/{materialRequest}/reject', [MaterialRequestController::class, 'reject']);
+        });
+        Route::middleware('can:material-requests.issue')->group(function () {
+            Route::post('/material-requests/{materialRequest}/issue', [MaterialRequestController::class, 'issue']);
+        });
+        Route::middleware('can:material-requests.return')->group(function () {
+            Route::post('/material-requests/{materialRequest}/return', [MaterialRequestController::class, 'return']);
+        });
+
+        // Equipment inventory
+        Route::middleware('can:equipment.manage')->group(function () {
+            Route::get('/equipment-items', [EquipmentItemController::class, 'index']);
+            Route::post('/equipment-items', [EquipmentItemController::class, 'store']);
+            Route::get('/equipment-items/{equipmentItem}', [EquipmentItemController::class, 'show']);
+            Route::patch('/equipment-items/{equipmentItem}', [EquipmentItemController::class, 'update']);
+            Route::delete('/equipment-items/{equipmentItem}', [EquipmentItemController::class, 'destroy']);
+        });
     });
 });

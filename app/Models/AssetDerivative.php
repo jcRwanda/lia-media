@@ -4,8 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class AssetDerivative extends Model
 {
@@ -16,5 +14,8 @@ class AssetDerivative extends Model
         return ['size_bytes' => 'integer'];
     }
 
-    public function asset(): BelongsTo { return $this->belongsTo(Asset::class); }
+    public function asset(): BelongsTo
+    {
+        return $this->belongsTo(Asset::class);
+    }
 }

@@ -6,7 +6,9 @@ use App\Storage\R2ObjectStorage;
 use Aws\CommandInterface;
 use Aws\MockHandler;
 use Aws\Result;
+use Aws\S3\Exception\S3Exception;
 use Aws\S3\S3Client;
+use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\TestCase;
 
 /** The R2 adapter against a mocked S3 API (no network). */
@@ -79,7 +81,7 @@ class R2ObjectStorageTest extends TestCase
         $this->assertSame('ENABLED', end($this->commands)['ChecksumMode']);
 
         $this->mock->append(function (CommandInterface $cmd) {
-            return new \Aws\S3\Exception\S3Exception('Not Found', $cmd, ['code' => 'NotFound', 'response' => new \GuzzleHttp\Psr7\Response(404)]);
+            return new S3Exception('Not Found', $cmd, ['code' => 'NotFound', 'response' => new Response(404)]);
         });
         $this->assertNull($this->r2->head('missing'));
     }

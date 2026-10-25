@@ -33,7 +33,18 @@ class UploadSession extends Model
         return $this->mode === 'multipart' ? (int) ceil($this->size_bytes / max(1, $this->part_size)) : 1;
     }
 
-    public function parts(): HasMany { return $this->hasMany(UploadPart::class)->orderBy('part_number'); }
-    public function user(): BelongsTo { return $this->belongsTo(User::class); }
-    public function asset(): BelongsTo { return $this->belongsTo(Asset::class); }
+    public function parts(): HasMany
+    {
+        return $this->hasMany(UploadPart::class)->orderBy('part_number');
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function asset(): BelongsTo
+    {
+        return $this->belongsTo(Asset::class);
+    }
 }

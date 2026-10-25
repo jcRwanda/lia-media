@@ -8,6 +8,7 @@ use App\Storage\ObjectStorage;
 use App\Storage\R2ObjectStorage;
 use GuzzleHttp\Client;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /**
@@ -29,7 +30,7 @@ class S3CompatibleUploadTest extends TestCase
         if (! getenv('E2E_S3_ENDPOINT')) {
             $this->markTestSkipped('Set E2E_S3_ENDPOINT to run against a real S3-compatible server.');
         }
-        $cfg = ['bucket' => 'lia-e2e-'.strtolower(\Illuminate\Support\Str::random(6)), 'key' => getenv('E2E_S3_KEY'), 'secret' => getenv('E2E_S3_SECRET'), 'endpoint' => getenv('E2E_S3_ENDPOINT'), 'region' => 'us-east-1', 'use_path_style' => true];
+        $cfg = ['bucket' => 'lia-e2e-'.strtolower(Str::random(6)), 'key' => getenv('E2E_S3_KEY'), 'secret' => getenv('E2E_S3_SECRET'), 'endpoint' => getenv('E2E_S3_ENDPOINT'), 'region' => 'us-east-1', 'use_path_style' => true];
         $this->s3 = new R2ObjectStorage($cfg);
         $this->s3->client()->createBucket(['Bucket' => $cfg['bucket']]);
         $this->app->instance(ObjectStorage::class, $this->s3);

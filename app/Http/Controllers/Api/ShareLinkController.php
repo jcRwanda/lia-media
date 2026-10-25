@@ -7,6 +7,7 @@ use App\Models\Album;
 use App\Models\Asset;
 use App\Models\AuditLog;
 use App\Models\ShareLink;
+use App\Services\AuditLogger;
 use App\Services\ShareService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -106,7 +107,7 @@ class ShareLinkController extends Controller
         $r = $share->recipients()->findOrFail($recipient);
         $r->update(['revoked_at' => now()]);
         $share->grants()->where('share_recipient_id', $r->id)->update(['revoked_at' => now()]);
-        app(\App\Services\AuditLogger::class)->log('share.recipient_revoked', $share, ['email' => $r->email]);
+        app(AuditLogger::class)->log('share.recipient_revoked', $share, ['email' => $r->email]);
 
         return response()->json(['ok' => true]);
     }

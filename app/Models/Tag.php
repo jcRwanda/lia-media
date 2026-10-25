@@ -3,9 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Tag extends Model
 {
@@ -16,5 +14,8 @@ class Tag extends Model
         return [];
     }
 
-    public function assets(): BelongsToMany { return $this->belongsToMany(Asset::class); }
+    public function assets(): BelongsToMany
+    {
+        return $this->belongsToMany(Asset::class);
+    }
 }

@@ -16,6 +16,9 @@ import ReviewQueuePage from '@/pages/review/ReviewQueuePage';
 import StoragePage from '@/pages/StoragePage';
 import SettingsPage from '@/pages/admin/SettingsPage';
 import VisitorGalleryPage from '@/pages/shares/VisitorGalleryPage';
+import MaterialRequestsPage from '@/pages/material-requests/MaterialRequestsPage';
+import MaterialRequestDetailPage from '@/pages/material-requests/MaterialRequestDetailPage';
+import EquipmentInventoryPage from '@/pages/material-requests/EquipmentInventoryPage';
 
 const guard = (ability: string, el: React.ReactNode) => <RequireAbility ability={ability}>{el}</RequireAbility>;
 
@@ -39,9 +42,14 @@ export const routes = [
             { path: '/upload', element: guard('assets.upload', <UploadPage />) },
             { path: '/admin/users', element: guard('users.manage', <UsersPage />) },
             { path: '/admin/audit', element: guard('audit.view', <AuditPage />) },
+            { path: '/material-requests', element: guard('material-requests.view', <MaterialRequestsPage />) },
+            { path: '/material-requests/:id', element: guard('material-requests.view', <MaterialRequestDetailPage />) },
+            { path: '/equipment-inventory', element: guard('equipment.manage', <EquipmentInventoryPage />) },
             { path: '*', element: <p className="text-sm text-neutral-500">Page not found.</p> },
         ],
     },
 ];
 
 export const router = createBrowserRouter(routes);
+
+// Material Requests (staff)

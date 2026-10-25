@@ -170,3 +170,102 @@ php artisan migrate:rollback --step=1   # drops users.must_change_password
 ```
 Reverting the code leaves the SPA routes and the three download routes in place only until the previous commit is
 deployed; no data is stored by this feature beyond the flag column.
+
+---
+
+# Deploy notes — Material / Equipment Requests module
+
+Branch: `feature/material-requests`
+
+## What changed
+- **Public API (versioned)** at `/api/v1/material-requests`: `GET /catalog`, `GET /config`, `POST /submit`, `POST /status` (reference code + email/phone). CORS allowlist via `MATERIAL_REQUEST_ALLOWED_ORIGINS` (env), per-client API keys via header `X-LIA-Key` stored as hashed in `api_clients` (name, hashed key, allowed origin, active) with rate limiting and honeypot/basic anti-spam.
+- **Embeddable hosted page** `/request-materials?type=alumni|trainee|client` (iframe-friendly with `CSP frame-ancestors` allowlisting the configured origins). Small JS embed snippet documented below.
+- **Requester types**: client, trainee (student), alumni. Common required fields + addresses + project location + emergency contact + items + purpose + dates + terms acceptance (bilingual Kinyarwanda/English). Extra fields for trainee/alumni only (program/cohort, graduation/completion year, student/alumni ID, project title, project type, expected outcome, portfolio/social link). Field config is data-driven via `config/material-requests.php`.
+- **Equipment inventory**: `equipment_items` managed by admin and new role **storekeeper** (added to roles/abilities). Staff API/UI support for inventory.
+- **Workflow states**: submitted → approved/rejected (admin, with note, can adjust quantities) → issued (storekeeper: per item, **required photo proof at handover**, condition, date, issued-by) → returned per item (storekeeper: **required photo proof at return**, condition, date, received-by; partial returns supported; overdue flag after return-by) → closed. Proof images stored in existing storage (public disk/R2 compatible). Full audit log via `MaterialRequestAuditService` (and integrated flow).
+- **Emails**: confirmation with reference code, approval/rejection, issue receipt, return receipt; admins notified of new requests; overdue reminder via scheduled command `material-requests:overdue-reminder` (daily).
+- **Staff SPA pages (added)**: Requests list (filters by status/type, overdue), request detail with approve/reject and issue/return actions incl. photo capture from phone camera (`input capture`), Inventory page. Mobile-friendly.
+- **Feature tests** added for API auth/CORS behavior, type-specific validation, workflow + role permissions, proof photo required.
+
+## Database
+```bash
+php artisan migrate --force
+```
+Adds: `api_clients`, `equipment_items`, `material_requests`, `material_request_items`, `material_request_audits`.
+
+## Environment variables
+Add to `.env`:
+```env
+MATERIAL_REQUEST_ALLOWED_ORIGINS=https://learning.loveinarts.com,https://loveinarts.com
+MATERIAL_REQUEST_HONEYPOT=website_url
+```
+(See `.env.example`.)
+
+## Create API keys via artisan command
+```bash
+php artisan material-requests:client "Learning Portal" --origin=https://learning.loveinarts.com
+php artisan material-requests:client "Alumni Portal" --origin=https://loveinarts.com
+```
+The command outputs the plain `X-LIA-Key` (store securely; not shown again). Keys are stored hashed in `api_clients`.
+
+## Embed instructions for both portals
+**Option 1: Iframe (hosted page)**
+```html
+<iframe src="https://your-domain.com/request-materials?type=alumni" width="100%" height="1200" frameborder="0" allow="camera"></iframe>
+```
+Use `type=trainee` or `type=client` as appropriate. The page sets `Content-Security-Policy: frame-ancestors` based on `MATERIAL_REQUEST_ALLOWED_ORIGINS` and is iframe-friendly.
+
+**Option 2: Direct API calls from the portals**
+Base URL: `https://your-domain.com/api/v1/material-requests`
+Headers: `Content-Type: application/json`, `X-LIA-Key: <plain-key>`, `Origin: <allowed-origin>`
+Endpoints:
+- `GET /catalog` - list requestable items (available qty)
+- `GET /config` - field config and bilingual terms
+- `POST /submit` - submit request (include items array with equipment_item_id and qty)
+- `POST /status` - check status by `reference_code` + (`email` or `phone`)
+
+Example submit (JSON):
+```json
+{
+  "requester_type": "alumni",
+  "full_name": "...",
+  "phone": "...",
+  "email": "...",
+  "emergency_contact_name": "...",
+  "emergency_contact_phone": "...",
+  "purpose_project_description": "...",
+  "needed_from": "2026-11-01",
+  "return_by": "2026-11-10",
+  "terms_accepted": true,
+  "items": [{"equipment_item_id": 1, "qty": 2}],
+  "program_cohort": "...",
+  "project_title": "..."
+}
+```
+
+**JS embed snippet (for portals):**
+```html
+<div id="lia-mr-embed"></div>
+<script>
+(function(){
+  const iframe = document.createElement('iframe');
+  iframe.src = 'https://your-domain.com/request-materials?type=' + encodeURIComponent('alumni');
+  iframe.style.width = '100%';
+  iframe.style.minHeight = '1100px';
+  iframe.style.border = '0';
+  iframe.allow = 'camera';
+  document.getElementById('lia-mr-embed').appendChild(iframe);
+})();
+</script>
+```
+
+## Roles/permissions
+- Add `storekeeper` role to users as needed. Storekeepers can manage equipment and perform issue/return actions. Admins/management/communications can approve/reject and manage requests.
+
+## Post-deploy checks
+```bash
+php artisan migrate --force
+php artisan material-requests:client "Test" --origin=https://example.com  # test
+php artisan test
+npm run build
+```

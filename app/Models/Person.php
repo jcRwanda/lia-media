@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -17,6 +16,14 @@ class Person extends Model
     }
 
     protected $table = 'people';
-    public function consents(): HasMany { return $this->hasMany(ConsentRecord::class); }
-    public function assets(): BelongsToMany { return $this->belongsToMany(Asset::class)->withPivot('consent_record_id'); }
+
+    public function consents(): HasMany
+    {
+        return $this->hasMany(ConsentRecord::class);
+    }
+
+    public function assets(): BelongsToMany
+    {
+        return $this->belongsToMany(Asset::class)->withPivot('consent_record_id');
+    }
 }

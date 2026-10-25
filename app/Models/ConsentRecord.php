@@ -4,8 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ConsentRecord extends Model
 {
@@ -17,7 +15,19 @@ class ConsentRecord extends Model
     }
 
     protected $hidden = ['form_storage_key'];
-    public function person(): BelongsTo { return $this->belongsTo(Person::class); }
-    public function event(): BelongsTo { return $this->belongsTo(Event::class); }
-    public function isActive(): bool { return ! $this->withdrawn_at && (! $this->expires_on || $this->expires_on->endOfDay()->isFuture()); }
+
+    public function person(): BelongsTo
+    {
+        return $this->belongsTo(Person::class);
+    }
+
+    public function event(): BelongsTo
+    {
+        return $this->belongsTo(Event::class);
+    }
+
+    public function isActive(): bool
+    {
+        return ! $this->withdrawn_at && (! $this->expires_on || $this->expires_on->endOfDay()->isFuture());
+    }
 }

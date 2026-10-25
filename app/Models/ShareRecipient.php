@@ -4,8 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ShareRecipient extends Model
 {
@@ -16,5 +14,8 @@ class ShareRecipient extends Model
         return ['revoked_at' => 'datetime', 'last_accessed_at' => 'datetime'];
     }
 
-    public function shareLink(): BelongsTo { return $this->belongsTo(ShareLink::class); }
+    public function shareLink(): BelongsTo
+    {
+        return $this->belongsTo(ShareLink::class);
+    }
 }

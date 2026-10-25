@@ -2,6 +2,8 @@
 
 use App\Http\Middleware\EnsurePasswordChanged;
 use App\Http\Middleware\EnsureUserIsActive;
+use App\Http\Middleware\MaterialRequestApiKeyAuth;
+use App\Http\Middleware\MaterialRequestCors;
 use App\Services\ShareService;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -22,6 +24,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'active' => EnsureUserIsActive::class,
             'must_change' => EnsurePasswordChanged::class,
+            'material.api_key' => MaterialRequestApiKeyAuth::class,
+            'material.cors' => MaterialRequestCors::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
