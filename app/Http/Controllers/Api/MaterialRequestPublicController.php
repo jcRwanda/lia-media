@@ -541,9 +541,9 @@ class MaterialRequestPublicController extends Controller
                 'Key' => $key,
                 'ContentType' => $data['content_type'],
             ]);
-            $requestPresigned = \Aws\S3\PresignedRequest::create($client, $cmd, '+10 minutes');
+            $requestPresigned = $client->createPresignedRequest($cmd, '+10 minutes');
             $presignedUrl = (string) $requestPresigned->getUri();
-            $headers = $requestPresigned->getHeaders();
+            $headers = ['Content-Type' => $data['content_type']];
         } catch (\Throwable $e) {
             return response()->json(['message' => 'Unable to generate upload URL'], 500);
         }
