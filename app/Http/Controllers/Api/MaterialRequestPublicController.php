@@ -519,6 +519,7 @@ class MaterialRequestPublicController extends Controller
         $data = $request->validate([
             'filename' => ['required', 'string', 'max:255'],
             'content_type' => ['required', 'string', 'max:255'],
+            'size' => ['nullable', 'integer', 'min:1', 'max:10737418240'],
         ]);
 
         $allowed = config('material-requests.final_work_allowed_mimes', []);
@@ -529,22 +530,25 @@ class MaterialRequestPublicController extends Controller
         $ext = pathinfo($data['filename'], PATHINFO_EXTENSION);
         $key = 'material-requests/final-work/'.$materialRequest->id.'/'.Str::uuid().($ext ? '.'.$ext : '');
         $disk = 'r2';
-        if (! config("filesystems.disks.{$disk}")) {
-            $disk = 'local';
-        }
-
         try {
-            $client = Storage::disk($disk)->getClient();
-            $bucket = config("filesystems.disks.{$disk}.bucket") ?? env('R2_BUCKET');
-            $cmd = $client->getCommand('PutObject', [
-                'Bucket' => $bucket,
-                'Key' => $key,
-                'ContentType' => $data['content_type'],
-            ]);
-            $requestPresigned = $client->createPresignedRequest($cmd, '+10 minutes');
-            $presignedUrl = (string) $requestPresigned->getUri();
-            $headers = ['Content-Type' => $data['content_type']];
+            $storage = app(\App\Storage\ObjectStorage::class);
+            if (! empty($data['size'])) {
+                $signed = $storage->presignPut($key, $data['content_type'], (int) $data['size'], 600);
+            } elseif ($storage instanceof \App\Storage\R2ObjectStorage) {
+                $client = $storage->client();
+                $cmd = $client->getCommand('PutObject', [
+                    'Bucket' => config('media.r2.bucket') ?? env('R2_BUCKET'),
+                    'Key' => $key,
+                    'ContentType' => $data['content_type'],
+                ]);
+                $signed = ['url' => (string) $client->createPresignedRequest($cmd, '+600 seconds')->getUri(), 'headers' => ['Content-Type' => $data['content_type']]];
+            } else {
+                $signed = $storage->presignPut($key, $data['content_type'], 1, 600);
+            }
+            $presignedUrl = $signed['url'];
+            $headers = $signed['headers'];
         } catch (\Throwable $e) {
+            report($e);
             return response()->json(['message' => 'Unable to generate upload URL'], 500);
         }
 
