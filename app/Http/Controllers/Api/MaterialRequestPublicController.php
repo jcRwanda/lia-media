@@ -498,6 +498,8 @@ class MaterialRequestPublicController extends Controller
 
     public function finalWorkUploadUrl(Request $request, string $reference): JsonResponse
     {
+        return response()->json(['message' => 'Final work is link-only. Submit a video link with POST /{reference}/final-work.'], 410);
+
         $apiClient = $request->attributes->get('api_client');
         if (! $apiClient instanceof ApiClient) {
             return response()->json(['message' => 'Unauthorized'], 401);
@@ -583,9 +585,9 @@ class MaterialRequestPublicController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'link' => ['nullable', 'url', 'max:2048'],
-            'file' => ['nullable', 'file'],
-            'key' => ['nullable', 'string', 'max:1024'],
+            'link' => ['required', 'url:http,https', 'max:2048'],
+            'file' => ['prohibited'],
+            'key' => ['prohibited'],
             'note' => ['nullable', 'string', 'max:2000'],
         ]);
 

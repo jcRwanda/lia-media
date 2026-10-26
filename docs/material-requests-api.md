@@ -396,6 +396,8 @@ const status = await lia(`/${request.reference_code}`);
 
 ## Final work (trainee requests)
 
+> **Link-only (2026-10-26):** trainees submit final work as a video/photo link only: `POST /{reference}/final-work` with `{"link": "https://...", "note": "..."}`. `link` is required; `file` and `key` are rejected (422), and `POST /{reference}/final-work/upload-url` returns 410 Gone.
+
 Trainee requests require final work submission after equipment is issued/returned depending on workflow. Endpoints (staff session):
 
 - `GET /api/material-requests/{id}` includes `final_work_status` (`not_required`, `pending`, `submitted`, `needs_changes`, `accepted`), `final_work_submitted_at`, `final_work_reviewed_at`, `final_work_review_note`, `final_work_reviewed_by`, and `final_works` array with `id`, `file_name`, `uploaded_at`, `download_url` (staff download via `GET /api/material-requests/{id}/final-work/{finalWork}/file`).
