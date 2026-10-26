@@ -5,14 +5,18 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Mail\MaterialRequestAdminNotificationMail;
 use App\Mail\MaterialRequestConfirmationMail;
+use App\Models\ApiClient;
 use App\Models\Cohort;
 use App\Models\EquipmentItem;
 use App\Models\MaterialRequest;
 use App\Models\MaterialRequestItem;
 use App\Models\User;
+use App\Services\EquipmentAvailabilityService;
 use App\Services\MaterialRequestAuditService;
 use App\Services\MaterialRequestPrefillService;
 use App\Services\MaterialRequestService;
+use App\Services\MaterialRequestWebhookService;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -28,6 +32,8 @@ class MaterialRequestPublicController extends Controller
         private MaterialRequestAuditService $audit,
         private MaterialRequestService $files,
         private MaterialRequestPrefillService $prefill,
+        private EquipmentAvailabilityService $availability,
+        private MaterialRequestWebhookService $webhooks,
     ) {}
 
     /**
@@ -109,6 +115,7 @@ class MaterialRequestPublicController extends Controller
             'items.*.equipment_item_id' => ['required', 'integer', 'exists:equipment_items,id'],
             'items.*.qty' => ['required', 'integer', 'min:1'],
             'cohort_id' => [Rule::requiredIf($cohortRequired), 'nullable', 'integer', 'exists:cohorts,id'],
+            'source_detail' => ['nullable', 'string', 'max:255'],
         ];
 
         if ($cohortRequired) {
@@ -127,6 +134,12 @@ class MaterialRequestPublicController extends Controller
         }
 
         $validated = $validator->validated();
+        $bookingLines = array_map(fn (array $item) => [
+            'equipment_item_id' => (int) $item['equipment_item_id'],
+            'qty' => (int) $item['qty'],
+        ], $validated['items']);
+        $neededFrom = CarbonImmutable::parse($validated['needed_from'])->startOfDay();
+        $returnBy = CarbonImmutable::parse($validated['return_by'])->startOfDay();
 
         if (! empty($validated['project_same_as_residential'])) {
             $validated['project_province'] = $validated['province_res'] ?? null;
@@ -150,6 +163,8 @@ class MaterialRequestPublicController extends Controller
                 $validated['project_district'] ?? null,
                 $validated['project_province'] ?? null,
             ]);
+
+        $this->availability->assertCanBook($bookingLines, $neededFrom, $returnBy);
 
         $reusedRequest = $this->prefill->consumeIdReuseToken(
             $validated['reuse_id_token'] ?? null,
@@ -179,9 +194,17 @@ class MaterialRequestPublicController extends Controller
             : $this->files->storeSignature((string) $validated['signature']);
 
         $cohort = ! empty($validated['cohort_id']) ? Cohort::query()->find($validated['cohort_id']) : null;
+        $apiClient = $request->attributes->get('api_client');
+        $apiClient = $apiClient instanceof ApiClient ? $apiClient : null;
+        $source = $apiClient?->name ?? 'Direct/Hosted form';
 
-        $materialRequest = DB::transaction(function () use ($validated, $idDocument, $signature, $cohort) {
+        $materialRequest = DB::transaction(function () use ($validated, $bookingLines, $neededFrom, $returnBy, $idDocument, $signature, $cohort, $apiClient, $source) {
+            $this->availability->assertCanBook($bookingLines, $neededFrom, $returnBy, lockItems: true);
+
             $materialRequest = MaterialRequest::query()->create([
+                'api_client_id' => $apiClient?->id,
+                'source' => $source,
+                'source_detail' => $validated['source_detail'] ?? null,
                 'requester_type' => $validated['requester_type'],
                 'full_name' => $validated['full_name'],
                 'phone' => $validated['phone'],
@@ -236,6 +259,7 @@ class MaterialRequestPublicController extends Controller
         });
 
         $this->audit->log($materialRequest, 'submitted', ['requester_type' => $materialRequest->requester_type], null, 'system');
+        $this->webhooks->dispatchIfConfigured($materialRequest);
 
         try {
             Mail::to($materialRequest->email)->queue(new MaterialRequestConfirmationMail($materialRequest));
@@ -312,6 +336,47 @@ class MaterialRequestPublicController extends Controller
                     'qty_returned' => $item->qty_returned,
                     'status' => $item->status,
                 ]),
+            ],
+        ]);
+    }
+
+    public function showByReference(Request $request, string $reference): JsonResponse
+    {
+        $apiClient = $request->attributes->get('api_client');
+        if (! $apiClient instanceof ApiClient) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $materialRequest = MaterialRequest::query()
+            ->with('items.equipmentItem')
+            ->where('reference_code', $reference)
+            ->where('api_client_id', $apiClient->id)
+            ->first();
+
+        if (! $materialRequest) {
+            return response()->json(['message' => 'Not found'], 404);
+        }
+
+        return response()->json([
+            'request' => [
+                'reference_code' => $materialRequest->reference_code,
+                'status' => $materialRequest->status,
+                'requester_type' => $materialRequest->requester_type,
+                'source' => $materialRequest->source,
+                'source_detail' => $materialRequest->source_detail,
+                'review_note' => $materialRequest->review_note,
+                'needed_from' => $materialRequest->needed_from?->format('Y-m-d'),
+                'return_by' => $materialRequest->return_by?->format('Y-m-d'),
+                'created_at' => $materialRequest->created_at?->toIso8601String(),
+                'updated_at' => $materialRequest->updated_at?->toIso8601String(),
+                'items' => $materialRequest->items->map(fn ($item) => [
+                    'name' => $item->equipmentItem?->name,
+                    'qty_requested' => $item->qty_requested,
+                    'qty_approved' => $item->qty_approved,
+                    'qty_issued' => $item->qty_issued,
+                    'qty_returned' => $item->qty_returned,
+                    'status' => $item->status,
+                ])->values(),
             ],
         ]);
     }

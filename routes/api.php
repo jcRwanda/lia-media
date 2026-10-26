@@ -7,9 +7,13 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ConsentController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DerivativeController;
+use App\Http\Controllers\Api\EquipmentBlockController;
+use App\Http\Controllers\Api\EquipmentCalendarController;
 use App\Http\Controllers\Api\EquipmentItemController;
 use App\Http\Controllers\Api\LookupController;
+use App\Http\Controllers\Api\MaterialRequestAvailabilityController;
 use App\Http\Controllers\Api\MaterialRequestController;
+use App\Http\Controllers\Api\MaterialRequestPlatformController;
 use App\Http\Controllers\Api\MaterialRequestPrefillController;
 use App\Http\Controllers\Api\MaterialRequestPublicController;
 use App\Http\Controllers\Api\PublicationController;
@@ -40,6 +44,14 @@ Route::middleware(['material.cors', 'material.api_key', 'throttle:api'])->prefix
     Route::get('/config', [MaterialRequestPublicController::class, 'config']);
     Route::post('/submit', [MaterialRequestPublicController::class, 'store']);
     Route::post('/status', [MaterialRequestPublicController::class, 'status']);
+});
+
+// Platform-to-platform API (strict X-LIA-Key). The public/open hosted routes above stay permissive.
+Route::middleware(['material.cors', 'throttle:api'])->get('/v1/material-requests/openapi.json', [MaterialRequestPlatformController::class, 'openapi']);
+Route::middleware(['material.cors', 'material.client', 'throttle:api'])->prefix('v1/material-requests')->group(function () {
+    Route::get('/form-schema', [MaterialRequestPlatformController::class, 'schema']);
+    Route::get('/availability', [MaterialRequestAvailabilityController::class, 'index']);
+    Route::get('/{reference}', [MaterialRequestPublicController::class, 'showByReference'])->where('reference', 'MR-[A-Za-z0-9]+');
 });
 
 // Visitor share endpoints (no staff session).
@@ -176,6 +188,10 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
             Route::get('/equipment-items', [EquipmentItemController::class, 'index']);
             Route::post('/equipment-items', [EquipmentItemController::class, 'store']);
             Route::get('/equipment-items/{equipmentItem}', [EquipmentItemController::class, 'show']);
+            Route::get('/equipment-calendar', [EquipmentCalendarController::class, 'index']);
+            Route::patch('/equipment-calendar/rules', [EquipmentCalendarController::class, 'updateRules']);
+            Route::post('/equipment-blocks', [EquipmentBlockController::class, 'store']);
+            Route::delete('/equipment-blocks/{equipmentBlock}', [EquipmentBlockController::class, 'destroy']);
             Route::patch('/equipment-items/{equipmentItem}', [EquipmentItemController::class, 'update']);
             Route::delete('/equipment-items/{equipmentItem}', [EquipmentItemController::class, 'destroy']);
         });

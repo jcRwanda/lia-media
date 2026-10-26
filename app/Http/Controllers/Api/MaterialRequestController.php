@@ -6,10 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Mail\MaterialRequestIssuedMail;
 use App\Mail\MaterialRequestReturnedMail;
 use App\Mail\MaterialRequestStatusMail;
+use App\Models\ApiClient;
 use App\Models\MaterialRequest;
 use App\Models\MaterialRequestItem;
 use App\Services\MaterialRequestAuditService;
 use App\Services\MaterialRequestService;
+use App\Services\MaterialRequestWebhookService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -19,7 +21,11 @@ use Illuminate\Validation\ValidationException;
 
 class MaterialRequestController extends Controller
 {
-    public function __construct(private MaterialRequestAuditService $audit, private MaterialRequestService $files) {}
+    public function __construct(
+        private MaterialRequestAuditService $audit,
+        private MaterialRequestService $files,
+        private MaterialRequestWebhookService $webhooks,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -27,23 +33,61 @@ class MaterialRequestController extends Controller
             abort(403);
         }
 
-        $query = MaterialRequest::query()->with('items.equipmentItem');
+        $base = MaterialRequest::query();
 
         if ($request->filled('status')) {
-            $query->where('status', $request->input('status'));
+            $base->where('status', $request->input('status'));
         }
         if ($request->filled('requester_type')) {
-            $query->where('requester_type', $request->input('requester_type'));
+            $base->where('requester_type', $request->input('requester_type'));
         }
         if ($request->boolean('overdue')) {
-            $query->whereNotNull('return_by')
+            $base->whereNotNull('return_by')
                 ->whereIn('status', ['approved', 'issued'])
                 ->whereDate('return_by', '<', now()->toDateString());
         }
 
-        $requests = $query->orderByDesc('created_at')->paginate($request->integer('per_page', 25));
+        $directLabel = 'Direct/Hosted form';
+        $total = (clone $base)->count();
+        $counts = (clone $base)
+            ->select('source')
+            ->selectRaw('COUNT(*) as aggregate')
+            ->groupBy('source')
+            ->pluck('aggregate', 'source');
 
-        return response()->json($requests);
+        $sources = [['key' => 'all', 'label' => 'All', 'count' => $total]];
+        foreach (ApiClient::query()->orderBy('name')->get(['id', 'name']) as $client) {
+            $sources[] = [
+                'key' => $client->name,
+                'label' => $client->name,
+                'count' => (int) ($counts[$client->name] ?? 0),
+            ];
+        }
+        $sources[] = [
+            'key' => $directLabel,
+            'label' => $directLabel,
+            'count' => (int) ($counts[$directLabel] ?? 0) + (int) ($counts[''] ?? 0),
+        ];
+
+        $query = (clone $base)->with(['items.equipmentItem', 'apiClient:id,name']);
+
+        if ($request->filled('source')) {
+            $source = (string) $request->input('source');
+            if ($source === $directLabel) {
+                $query->where(fn ($inner) => $inner->whereNull('source')->orWhere('source', $directLabel));
+            } else {
+                $query->where('source', $source);
+            }
+        }
+        if ($request->filled('api_client_id')) {
+            $query->where('api_client_id', $request->integer('api_client_id'));
+        }
+
+        $requests = $query->orderByDesc('created_at')->paginate($request->integer('per_page', 25));
+        $payload = $requests->toArray();
+        $payload['sources'] = $sources;
+
+        return response()->json($payload);
     }
 
     public function show(Request $request, MaterialRequest $materialRequest): JsonResponse
@@ -52,9 +96,11 @@ class MaterialRequestController extends Controller
             abort(403);
         }
 
-        $materialRequest->load(['items.equipmentItem', 'audits.actor', 'cohort:id,name,code']);
+        $materialRequest->load(['items.equipmentItem', 'audits.actor', 'cohort:id,name,code', 'apiClient:id,name']);
 
         $payload = $materialRequest->toArray();
+        $payload['source'] = $materialRequest->source ?? $materialRequest->apiClient?->name ?? 'Direct/Hosted form';
+        $payload['source_label'] = $payload['source'];
         $payload['is_overdue'] = $materialRequest->isOverdue();
         $payload['id_document_url'] = $this->files->presign($materialRequest->id_document_path, $materialRequest->id_document_name);
         $payload['signature_url'] = $this->files->presign($materialRequest->signature_path, 'signature.png');
@@ -117,6 +163,7 @@ class MaterialRequestController extends Controller
         });
 
         $materialRequest->refresh();
+        $this->webhooks->dispatchIfConfigured($materialRequest, 'submitted');
 
         try {
             Mail::to($materialRequest->email)->queue(new MaterialRequestStatusMail($materialRequest));
@@ -163,6 +210,7 @@ class MaterialRequestController extends Controller
         });
 
         $materialRequest->refresh();
+        $this->webhooks->dispatchIfConfigured($materialRequest, 'submitted');
 
         try {
             Mail::to($materialRequest->email)->queue(new MaterialRequestStatusMail($materialRequest));
@@ -228,6 +276,7 @@ class MaterialRequestController extends Controller
         });
 
         $materialRequest->refresh();
+        $this->webhooks->dispatchIfConfigured($materialRequest, 'approved');
 
         try {
             Mail::to($materialRequest->email)->queue(new MaterialRequestIssuedMail($materialRequest));
@@ -246,6 +295,7 @@ class MaterialRequestController extends Controller
         if (! in_array($materialRequest->status, ['issued', 'approved'], true)) {
             // allow returning even if partially issued
         }
+        $previousStatus = $materialRequest->status;
 
         $validator = Validator::make($request->all(), [
             'items' => ['required', 'array'],
@@ -307,6 +357,7 @@ class MaterialRequestController extends Controller
         });
 
         $materialRequest->refresh();
+        $this->webhooks->dispatchIfConfigured($materialRequest, $previousStatus);
 
         try {
             Mail::to($materialRequest->email)->queue(new MaterialRequestReturnedMail($materialRequest));

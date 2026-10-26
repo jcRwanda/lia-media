@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class EquipmentItem extends Model
@@ -27,8 +28,13 @@ class EquipmentItem extends Model
         ];
     }
 
-    public function materialRequestItems()
+    public function materialRequestItems(): HasMany
     {
         return $this->hasMany(MaterialRequestItem::class);
+    }
+
+    public function blocks(): HasMany
+    {
+        return $this->hasMany(EquipmentBlock::class);
     }
 }

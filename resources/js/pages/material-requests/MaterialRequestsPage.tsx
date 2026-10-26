@@ -14,19 +14,26 @@ function buildQuery(params: Record<string, any>) {
 }
 
 export default function MaterialRequestsPage() {
+    const [source, setSource] = useState('');
     const [status, setStatus] = useState('');
     const [requesterType, setRequesterType] = useState('');
     const [overdue, setOverdue] = useState(false);
 
     const { data, isLoading } = useQuery({
-        queryKey: ['material-requests', status, requesterType, overdue],
+        queryKey: ['material-requests', source, status, requesterType, overdue],
         queryFn: async () => {
-            const res = await api<any>('/material-requests' + buildQuery({ status: status || undefined, requester_type: requesterType || undefined, overdue: overdue ? 1 : undefined }));
+            const res = await api<any>('/material-requests' + buildQuery({
+                source: source || undefined,
+                status: status || undefined,
+                requester_type: requesterType || undefined,
+                overdue: overdue ? 1 : undefined,
+            }));
             return res;
         },
     });
 
     const requests = data?.data || data || [];
+    const sources = data?.sources || [];
 
     return (
         <div className="p-4 space-y-4">
@@ -52,6 +59,23 @@ export default function MaterialRequestsPage() {
                 </div>
             </div>
 
+            {sources.length > 0 && (
+                <div className="flex flex-wrap gap-1 border-b border-neutral-200 pb-2">
+                    {sources.map((s: any) => {
+                        const active = s.key === 'all' ? source === '' : source === s.key;
+                        return (
+                            <button
+                                key={s.key}
+                                onClick={() => setSource(s.key === 'all' ? '' : s.key)}
+                                className={`rounded-full px-3 py-1 text-xs ${active ? 'bg-lia-700 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'}`}
+                            >
+                                {s.label} <span className={active ? 'text-white/75' : 'text-neutral-400'}>{s.count}</span>
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+
             <div className="overflow-x-auto border rounded">
                 <table className="w-full text-sm">
                     <thead className="bg-neutral-50">
@@ -59,6 +83,7 @@ export default function MaterialRequestsPage() {
                             <th className="text-left p-2">Reference</th>
                             <th className="text-left p-2">Requester</th>
                             <th className="text-left p-2">Type</th>
+                            <th className="text-left p-2">Source</th>
                             <th className="text-left p-2">Status</th>
                             <th className="text-left p-2">Return by</th>
                             <th className="text-left p-2">Created</th>
@@ -67,14 +92,18 @@ export default function MaterialRequestsPage() {
                     </thead>
                     <tbody>
                         {isLoading ? (
-                            <tr><td className="p-2" colSpan={7}>Loading...</td></tr>
+                            <tr><td className="p-2" colSpan={8}>Loading...</td></tr>
                         ) : requests.length === 0 ? (
-                            <tr><td className="p-2" colSpan={7}>No requests</td></tr>
+                            <tr><td className="p-2" colSpan={8}>No requests</td></tr>
                         ) : requests.map((r: any) => (
                             <tr key={r.id} className="border-t">
                                 <td className="p-2 font-mono text-xs">{r.reference_code}</td>
                                 <td className="p-2">{r.full_name}<br /><span className="text-xs text-neutral-500">{r.email}</span></td>
                                 <td className="p-2 capitalize">{r.requester_type}</td>
+                                <td className="p-2">
+                                    <div className="text-xs font-medium">{r.source || 'Direct/Hosted form'}</div>
+                                    {r.source_detail && <div className="text-[11px] text-neutral-500">{r.source_detail}</div>}
+                                </td>
                                 <td className="p-2 capitalize">{r.status}</td>
                                 <td className="p-2">{r.return_by}</td>
                                 <td className="p-2">{r.created_at?.slice(0,10)}</td>

@@ -19,6 +19,7 @@ import VisitorGalleryPage from '@/pages/shares/VisitorGalleryPage';
 import MaterialRequestsPage from '@/pages/material-requests/MaterialRequestsPage';
 import MaterialRequestDetailPage from '@/pages/material-requests/MaterialRequestDetailPage';
 import EquipmentInventoryPage from '@/pages/material-requests/EquipmentInventoryPage';
+import EquipmentCalendarPage from '@/pages/material-requests/EquipmentCalendarPage';
 
 const guard = (ability: string, el: React.ReactNode) => <RequireAbility ability={ability}>{el}</RequireAbility>;
 
@@ -45,6 +46,7 @@ export const routes = [
             { path: '/material-requests', element: guard('material-requests.view', <MaterialRequestsPage />) },
             { path: '/material-requests/:id', element: guard('material-requests.view', <MaterialRequestDetailPage />) },
             { path: '/equipment-inventory', element: guard('equipment.manage', <EquipmentInventoryPage />) },
+            { path: '/equipment-calendar', element: guard('material-requests.view', <EquipmentCalendarPage />) },
             { path: '*', element: <p className="text-sm text-neutral-500">Page not found.</p> },
         ],
     },

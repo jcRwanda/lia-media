@@ -16,6 +16,9 @@ class MaterialRequest extends Model
     protected $fillable = [
         'uuid',
         'reference_code',
+        'api_client_id',
+        'source',
+        'source_detail',
         'requester_type',
         'full_name',
         'phone',
@@ -91,6 +94,11 @@ class MaterialRequest extends Model
                 $request->reference_code = 'MR-'.strtoupper(Str::random(8));
             }
         });
+    }
+
+    public function apiClient(): BelongsTo
+    {
+        return $this->belongsTo(ApiClient::class);
     }
 
     public function items(): HasMany

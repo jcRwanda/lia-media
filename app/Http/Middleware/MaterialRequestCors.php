@@ -26,7 +26,7 @@ class MaterialRequestCors
 
         if ($origin && (empty($allowed) || in_array($origin, $allowed, true))) {
             $response->headers->set('Access-Control-Allow-Origin', $origin);
-            $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+            $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
             $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, X-LIA-Key, X-Api-Key, Authorization');
             $response->headers->set('Access-Control-Allow-Credentials', 'true');
         }

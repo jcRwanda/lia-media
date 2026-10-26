@@ -1,3 +1,88 @@
+# Deploy notes — Material Requests platform API v2, sources, webhooks & equipment calendar
+
+Branch: `feature/requests-api-v2`.
+
+## What changed
+- **Strict server-to-server API** under `/api/v1/material-requests`: `GET /form-schema`,
+  `GET /availability`, `GET /{reference}` and a public `GET /openapi.json`, all documented in
+  `docs/material-requests-api.md`. Auth is `X-LIA-Key` against active `api_clients`; unknown/missing keys get `401`,
+  browser origins that do not match an allowed origin get `403`. Existing hosted-form routes are unchanged.
+- **Source tracking.** Every request now stores `source` (API client name, or `Direct/Hosted form` for the hosted/plain
+  form) and optional `source_detail`. Staff can filter by source tab with per-source counts on the requests list; the
+  detail page shows the source. Existing rows with no source are counted under `Direct/Hosted form`.
+- **Booking availability and rules.** `GET /availability` reports reserved, blocked and unavailable dates per item.
+  Submission now rejects lead-time/max-length/closed-weekday violations, global or item date blocks, and insufficient
+  stock for **approved/issued** reservations. Only approved/issued requests reserve stock. Defaults preserve current
+  behaviour: lead time `0`, max `30` days, no closed weekdays.
+- **Webhooks.** Optional `api_clients.webhook_url`; status changes are queued with retries and signed with
+  `X-LIA-Signature: sha256=<HMAC of raw body>` using the client key. See the API doc for verification examples.
+- **Equipment calendar (staff UI + API).** Month view of approved/issued bookings per item, global/item date blocks,
+  and editable booking rules at `/equipment-calendar` (nav: **Equipment calendar**).
+- **New staff API routes:** `GET /api/equipment-calendar`, `PATCH /api/equipment-calendar/rules`,
+  `POST /api/equipment-blocks`, `DELETE /api/equipment-blocks/{block}`.
+- **Artisan helpers:** `material-requests:client --webhook=` and
+  `material-requests:webhook {client} {url?} [--clear]`.
+
+## Database
+```bash
+php artisan migrate --force
+```
+Two migrations:
+- `2026_10_26_144827_add_api_client_source_and_webhook_to_material_requests.php` — adds `api_clients.webhook_url`,
+  `material_requests.api_client_id`, `source`, `source_detail`, plus source and booking-window indexes.
+- `2026_10_26_144828_create_equipment_blocks_table.php` — creates `equipment_blocks` with an optional item foreign
+  key (null = all equipment), inclusive dates, reason and creator.
+No backfill is required. Existing requests remain valid and show as `Direct/Hosted form` until new requests arrive.
+
+## Configuration
+No new required environment variables. Optional:
+- `MATERIAL_REQUEST_ALLOWED_ORIGINS` continues to control browser CORS/frame origins.
+- Set a webhook per client with the commands below (or update `api_clients.webhook_url` directly).
+
+```bash
+# Create a client, optionally with a webhook
+php artisan material-requests:client "Learning Portal" \
+  --origin=https://learning.loveinarts.com \
+  --webhook=https://learning.loveinarts.com/hooks/lia-material-requests
+
+# Set or clear a webhook later
+php artisan material-requests:webhook "Learning Portal" https://learning.loveinarts.com/hooks/lia-material-requests
+php artisan material-requests:webhook "Learning Portal" --clear
+```
+
+The webhook signing secret is the client's plain `X-LIA-Key` (the command prints it once). Ensure the receiving
+endpoint verifies the signature against the raw request body and tolerates retries.
+
+## Post-deploy checks
+```bash
+php artisan test          # 93 tests, 2 skipped
+npm test                  # vitest 27 passed
+npm run build
+```
+
+Smoke test:
+- `GET /api/v1/material-requests/form-schema?type=alumni` with a valid key returns fields and cohorts; without a key
+  returns `401`.
+- `GET /api/v1/material-requests/openapi.json` is public.
+- Create an approved request, then submit an overlapping request from the same client: `422` with an
+  `items.0.qty` error. Unapproved requests do not reserve stock.
+- Add a global block from **Equipment calendar**, then submit a request covering those dates: `422`.
+- Submit one request from the hosted form and one with an API key: staff list tabs show `Direct/Hosted form` and the
+  client name with correct counts; filtering works.
+- Configure a webhook and approve a request: the receiver gets `X-LIA-Signature` and `X-LIA-Event`; a signature check
+  against the raw body passes.
+- Change booking rules on **Equipment calendar** (for example close Sunday, lead time 2 days) and confirm new
+  submissions are rejected until the dates comply.
+
+## Rollback
+```bash
+php artisan migrate:rollback --step=2
+```
+Drops `equipment_blocks` and the source/webhook columns. Webhook URLs and source labels are lost; booking history in
+`material_requests` is not. Hosted-form links and existing request data are unaffected.
+
+---
+
 # Deploy notes — upload defaults, day galleries & visitor downloads
 
 Branch: `feature/daily-galleries` (based on `0a745f3`).

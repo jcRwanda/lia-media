@@ -22,6 +22,10 @@ class SettingsService
         'default_album_uuid' => '',           // explicit default album; empty = auto-managed
         'daily_galleries_enabled' => true,    // auto-file uploads into a per-day gallery
         'gallery_timezone' => 'Africa/Kigali',
+        // Equipment booking rules.
+        'equipment_closed_weekdays' => [],       // 0 (Sunday) to 6 (Saturday)
+        'equipment_max_booking_days' => 30,      // inclusive length of a booking
+        'equipment_lead_time_days' => 0,         // minimum days between today and pick-up
     ];
 
     public function all(): array

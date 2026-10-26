@@ -3,6 +3,7 @@
 use App\Http\Middleware\EnsurePasswordChanged;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\MaterialRequestApiKeyAuth;
+use App\Http\Middleware\MaterialRequestClientAuth;
 use App\Http\Middleware\MaterialRequestCors;
 use App\Services\ShareService;
 use Illuminate\Foundation\Application;
@@ -25,6 +26,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'active' => EnsureUserIsActive::class,
             'must_change' => EnsurePasswordChanged::class,
             'material.api_key' => MaterialRequestApiKeyAuth::class,
+            'material.client' => MaterialRequestClientAuth::class,
             'material.cors' => MaterialRequestCors::class,
         ]);
     })

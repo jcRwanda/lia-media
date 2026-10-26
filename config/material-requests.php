@@ -62,6 +62,8 @@ return [
     ],
 
     'labels' => [
+        'requester_type' => ['kn' => "Ubwoko bw'usaba", 'en' => 'Requester Type'],
+        'source_detail' => ['kn' => 'Aho ubusabe bukomoka', 'en' => 'Source Detail'],
         'full_name' => ['kn' => 'Amazina yose', 'en' => 'Full Names'],
         'phone' => ['kn' => 'Numero ya telefoni', 'en' => 'Phone Number'],
         'email' => ['kn' => 'Imeli', 'en' => 'Email'],
