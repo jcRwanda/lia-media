@@ -39,10 +39,15 @@ export default function UploadPage() {
         running.current++;
         try {
             const r = await renditionsFor(item.file);
+            const hasVideoMeta = !!r && typeof r === 'object' && 'width' in r && 'height' in r;
+            const videoWidth = hasVideoMeta && typeof r.width === 'number' && r.width > 0 ? r.width : undefined;
+            const videoHeight = hasVideoMeta && typeof r.height === 'number' && r.height > 0 ? r.height : undefined;
+            const durationMs = hasVideoMeta && 'duration_ms' in r && typeof r.duration_ms === 'number' && r.duration_ms > 0 ? r.duration_ms : undefined;
             const context: UploadContext = {
                 project_id: ctx.project_id || null, event_id: ctx.event_id || null, cohort_id: ctx.cohort_id || null, category_id: ctx.category_id || null,
                 album_id: ctx.album_id || null, credit: ctx.credit || null, tags: ctx.tagText.split(',').map((t) => t.trim()).filter(Boolean),
-                ...(r ? { width: r.width, height: r.height, duration_ms: 'duration_ms' in r ? (r.duration_ms as number) : undefined } : {}),
+                ...(videoWidth !== undefined && videoHeight !== undefined ? { width: videoWidth, height: videoHeight } : {}),
+                ...(durationMs !== undefined ? { duration_ms: durationMs } : {}),
             };
             const res = await uploadFile(item.file, context, (p) => patch(item.id, { phase: p.phase, loaded: p.loaded, total: p.total, message: p.message }), ctrl.signal);
             if (!res.duplicate && r) {

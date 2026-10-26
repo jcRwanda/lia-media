@@ -194,4 +194,17 @@ class UploadTest extends TestCase
         $this->r2->simulatePut("derivatives/{$uuid}/thumb.webp", '12345', 'image/webp');
         $this->actingAs($this->mm)->postJson("/api/assets/{$uuid}/derivatives/thumb/complete")->assertOk()->assertJsonPath('derivative.status', 'ready');
     }
+
+    public function test_multipart_upload_id_can_store_long_r2_upload_ids(): void
+    {
+        config(['media.multipart_threshold' => 1]);
+        $longUploadId = str_repeat('A', 500);
+        $body = random_bytes(500);
+
+        $res = $this->init($body, ['filename' => 'big.mp4', 'mime_type' => 'video/mp4'])->assertCreated()->json();
+        UploadSession::where('uuid', $res['upload']['uuid'])->update(['upload_id' => $longUploadId]);
+
+        $this->assertSame($longUploadId, UploadSession::where('uuid', $res['upload']['uuid'])->value('upload_id'));
+        $this->assertNotNull(UploadSession::where('uuid', $res['upload']['uuid'])->value('upload_id'));
+    }
 }

@@ -25,6 +25,7 @@ class AssetPresenter
             'consent_status' => $a->consent_status, 'storage_status' => $a->storage_status, 'created_at' => $a->created_at?->toIso8601String(),
             'captured_at' => $a->captured_at?->toIso8601String(),
             'thumb_url' => $this->derivUrl($a, 'thumb'),
+            'original_url' => $this->storage->presignGet($a->storage_key, config('media.ttl.preview'), $a->original_filename, true),
         ];
     }
 

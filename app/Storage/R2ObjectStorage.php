@@ -120,6 +120,10 @@ class R2ObjectStorage implements ObjectStorage
     public function presignGet(string $key, int $ttl, ?string $downloadName = null, bool $inline = true): string
     {
         $args = ['Bucket' => $this->bucket(), 'Key' => $key];
+        $head = $this->head($key);
+        if ($head['content_type'] ?? null) {
+            $args['ResponseContentType'] = $head['content_type'];
+        }
         if ($downloadName) {
             $safe = str_replace(['"', "\\", "\r", "\n"], '', $downloadName);
             $args['ResponseContentDisposition'] = ($inline ? 'inline' : 'attachment').'; filename="'.$safe.'"';
@@ -160,5 +164,15 @@ class R2ObjectStorage implements ObjectStorage
         }
 
         return $out;
+    }
+
+    public function putFile(string $key, string $contentType, string $body): void
+    {
+        $this->client()->putObject([
+            'Bucket' => $this->bucket(),
+            'Key' => $key,
+            'Body' => $body,
+            'ContentType' => $contentType,
+        ]);
     }
 }

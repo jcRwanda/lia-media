@@ -6,6 +6,7 @@ use App\Models\Asset;
 use App\Models\AssetDerivative;
 use App\Storage\ObjectStorage;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
 
 /** Thumbnails / previews / video posters are generated in the browser and uploaded here as separate objects. */
 class DerivativeService
@@ -14,14 +15,83 @@ class DerivativeService
 
     public static function key(Asset $a, string $type, string $mime): string
     {
+        if ($mime === 'video/mp4') {
+            return "derivatives/{$a->uuid}/{$type}.mp4";
+        }
+
         return "derivatives/{$a->uuid}/{$type}.".($mime === 'image/jpeg' ? 'jpg' : 'webp');
+    }
+
+    public function generatePreview(Asset $asset): ?array
+    {
+        if ($asset->kind !== 'video' || ! $this->isTranscodableVideo($asset)) {
+            return null;
+        }
+
+        $source = $this->storage->presignGet($asset->storage_key, 3600, $asset->original_filename, true);
+        $tmpIn = tempnam(sys_get_temp_dir(), 'video-in-');
+        $tmpOut = tempnam(sys_get_temp_dir(), 'video-out-');
+        unlink($tmpIn);
+        unlink($tmpOut);
+        $in = $tmpIn.'.mp4';
+        $out = $tmpOut.'.mp4';
+
+        $cmd = [
+            'ffmpeg', '-y', '-hide_banner', '-loglevel', 'error', '-i', $source,
+            '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p',
+            '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '28', '-movflags', '+faststart',
+            '-c:a', 'aac', '-movflags', '+faststart', $out,
+        ];
+        $escaped = [];
+        foreach ($cmd as $part) {
+            $escaped[] = escapeshellarg($part);
+        }
+        $code = 0;
+        $output = [];
+        exec(implode(' ', $escaped).' 2>&1', $output, $code);
+        if ($code !== 0 || ! is_file($out) || filesize($out) === 0) {
+            @unlink($in);
+            @unlink($out);
+
+            return null;
+        }
+
+        $body = file_get_contents($out);
+        if ($body === false) {
+            @unlink($in);
+            @unlink($out);
+
+            return null;
+        }
+        $key = self::key($asset, 'preview', 'video/mp4');
+        $this->storage->putFile($key, 'video/mp4', $body);
+        @unlink($out);
+
+        $head = $this->storage->head($key);
+        if (! $head) {
+            throw new RuntimeException('Preview video was not stored.');
+        }
+
+        $deriv = AssetDerivative::query()->updateOrCreate(['asset_id' => $asset->id, 'type' => 'preview'], [
+            'storage_key' => $key, 'mime_type' => 'video/mp4', 'width' => $asset->width ?? 1280, 'height' => $asset->height ?? 720, 'size_bytes' => $head['size'], 'status' => 'ready',
+        ]);
+
+        return $deriv->only(['type', 'status', 'width', 'height', 'size_bytes']);
+    }
+
+    private function isTranscodableVideo(Asset $asset): bool
+    {
+        return in_array($asset->mime_type, ['video/mp4', 'video/quicktime', 'video/x-m4v'], true) || str_starts_with($asset->mime_type, 'video/');
     }
 
     public function initiate(Asset $asset, array $d): array
     {
         $cfg = config("media.derivatives.{$d['type']}");
         if (! in_array($d['mime_type'], $cfg['mimes'], true)) {
-            throw ValidationException::withMessages(['mime_type' => 'Derivatives must be WebP or JPEG.']);
+            throw ValidationException::withMessages(['mime_type' => 'Derivatives must be WebP, JPEG, or MP4.']);
+        }
+        if ($d['type'] === 'preview' && $d['mime_type'] === 'video/mp4' && $asset->kind !== 'video') {
+            throw ValidationException::withMessages(['type' => 'Video previews are for videos only.']);
         }
         if (max($d['width'], $d['height']) > $cfg['max']) {
             throw ValidationException::withMessages(['width' => "A {$d['type']} may be at most {$cfg['max']}px on its long side."]);

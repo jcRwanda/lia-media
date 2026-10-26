@@ -13,7 +13,7 @@ import { api, ApiError, csrfToken, ensureCsrf, fieldErrors } from '@/lib/api';
 import { fetchSelectedFiles, MAX_ZIP_ITEMS, saveFilesSequentially, shareFiles, stepIndex, submitZipDownload, swipeDirection, toggleSelection, usesIndividualDownloads } from '@/lib/gallery';
 import { cn, formatDate } from '@/lib/utils';
 
-interface Item { uuid: string; kind: string; title: string; width: number | null; height: number | null; credit: string | null; thumb_url: string | null; preview_url: string | null }
+interface Item { uuid: string; kind: string; title: string; width: number | null; height: number | null; credit: string | null; thumb_url: string | null; preview_url: string | null; original_url?: string | null }
 interface Res { share: { title: string | null; message: string | null; mode: string; allow_download: boolean; expires_at: string | null }; requires_code: boolean; items?: Item[]; url_ttl_seconds?: number }
 
 const codeSchema = z.object({ code: z.string().min(4, 'Enter the code you received') });
@@ -183,7 +183,22 @@ export default function VisitorGalleryPage() {
                         <button aria-label="Close" onClick={() => setView(null)}><X className="h-6 w-6" /></button>
                     </div>
                     <div className="relative flex flex-1 items-center justify-center p-2">
-                        {current.preview_url ? <img src={current.preview_url} alt={current.title} className="max-h-full max-w-full object-contain" draggable={false} /> : <p>No preview</p>}
+                        {current.kind === 'video' ? (
+                            <video
+                                key={current.original_url || current.preview_url || current.uuid}
+                                src={current.original_url || current.preview_url || undefined}
+                                controls
+                                playsInline
+                                preload="metadata"
+                                className="max-h-full max-w-full bg-black object-contain"
+                            />
+                        ) : current.original_url && (current.kind === 'image' || /heic|heif/i.test(current.original_url)) ? (
+                            <img src={current.original_url} alt={current.title} className="max-h-full max-w-full object-contain" draggable={false} />
+                        ) : current.preview_url ? (
+                            <img src={current.preview_url} alt={current.title} className="max-h-full max-w-full object-contain" draggable={false} />
+                        ) : (
+                            <p>No preview</p>
+                        )}
                         <button aria-label="Previous" className="absolute left-2 rounded-full bg-white/10 p-3 disabled:opacity-20" disabled={view === 0} onClick={() => setView((v) => (v === null ? v : stepIndex(v, -1, items.length)))}><ChevronLeft /></button>
                         <button aria-label="Next" className="absolute right-2 rounded-full bg-white/10 p-3 disabled:opacity-20" disabled={view === items.length - 1} onClick={() => setView((v) => (v === null ? v : stepIndex(v, 1, items.length)))}><ChevronRight /></button>
                     </div>
@@ -192,3 +207,8 @@ export default function VisitorGalleryPage() {
         </div>
     );
 }
+
+const isNativeDisplayable = (item: Item) => {
+    const mime = (item as { mime_type?: string } | undefined)?.mime_type;
+    return item.kind === 'video' || mime === 'image/heic' || mime === 'image/heif' || mime === 'image/heic-sequence';
+};

@@ -35,4 +35,7 @@ interface ObjectStorage
 
     /** @return array{objects: int, bytes: int, by_prefix: array<string, array{objects: int, bytes: int}>} */
     public function usage(array $prefixes = ['originals/', 'derivatives/']): array;
+
+    /** Store raw object bytes directly (used for generated previews and derived media). */
+    public function putFile(string $key, string $contentType, string $body): void;
 }

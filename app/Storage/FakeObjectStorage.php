@@ -116,6 +116,12 @@ class FakeObjectStorage implements ObjectStorage
         unset($this->objects[$key]);
     }
 
+    public function putFile(string $key, string $contentType, string $body): void
+    {
+        $this->calls[] = ['putFile', $key];
+        $this->objects[$key] = ['body' => $body, 'content_type' => $contentType, 'sha256_base64' => null];
+    }
+
     public function usage(array $prefixes = ['originals/', 'derivatives/']): array
     {
         $out = ['objects' => 0, 'bytes' => 0, 'by_prefix' => []];
