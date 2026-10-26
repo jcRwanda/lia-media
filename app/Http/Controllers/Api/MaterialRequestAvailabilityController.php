@@ -20,6 +20,7 @@ class MaterialRequestAvailabilityController extends Controller
             'item_ids.*' => ['required', 'integer', Rule::exists('equipment_items', 'id')->whereNull('deleted_at')],
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date', 'after_or_equal:from'],
+            'type' => ['nullable', Rule::in(config('material-requests.requester_types', ['client', 'trainee', 'alumni']))],
         ]);
 
         $from = isset($data['from'])
@@ -39,6 +40,20 @@ class MaterialRequestAvailabilityController extends Controller
         $itemIds = [];
         if (isset($data['item_ids'])) {
             $itemIds = array_values(array_map('intval', $data['item_ids']));
+            if (($data['type'] ?? null) === 'trainee') {
+                $itemIds = \App\Models\EquipmentItem::query()
+                    ->whereIn('id', $itemIds)
+                    ->where('allowed_for_trainees', true)
+                    ->pluck('id')
+                    ->map(fn ($id) => (int) $id)
+                    ->all();
+            }
+        } elseif (($data['type'] ?? null) === 'trainee') {
+            $itemIds = \App\Models\EquipmentItem::query()
+                ->where('allowed_for_trainees', true)
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
         }
 
         return response()->json($this->availability->availability($itemIds, $from, $to));

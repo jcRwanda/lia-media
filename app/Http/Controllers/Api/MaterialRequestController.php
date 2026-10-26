@@ -8,6 +8,7 @@ use App\Mail\MaterialRequestReturnedMail;
 use App\Mail\MaterialRequestStatusMail;
 use App\Models\ApiClient;
 use App\Models\MaterialRequest;
+use App\Models\MaterialRequestFinalWork;
 use App\Models\MaterialRequestItem;
 use App\Services\MaterialRequestAuditService;
 use App\Services\MaterialRequestService;
@@ -16,6 +17,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
@@ -96,7 +98,13 @@ class MaterialRequestController extends Controller
             abort(403);
         }
 
-        $materialRequest->load(['items.equipmentItem', 'audits.actor', 'cohort:id,name,code', 'apiClient:id,name']);
+        if ($materialRequest->requester_type === 'trainee') {
+            if (in_array($materialRequest->status, ['issued', 'returned']) && $materialRequest->final_work_status === 'not_required') {
+                $materialRequest->forceFill(['final_work_status' => 'pending'])->save();
+            }
+        }
+
+        $materialRequest->load(['items.equipmentItem', 'audits.actor', 'cohort:id,name,code', 'apiClient:id,name', 'finalWorks', 'finalWorkReviewedBy']);
 
         $payload = $materialRequest->toArray();
         $payload['source'] = $materialRequest->source ?? $materialRequest->apiClient?->name ?? 'Direct/Hosted form';
@@ -104,6 +112,16 @@ class MaterialRequestController extends Controller
         $payload['is_overdue'] = $materialRequest->isOverdue();
         $payload['id_document_url'] = $this->files->presign($materialRequest->id_document_path, $materialRequest->id_document_name);
         $payload['signature_url'] = $this->files->presign($materialRequest->signature_path, 'signature.png');
+        $payload['final_works'] = $materialRequest->finalWorks->map(fn ($fw) => [
+            'id' => $fw->id,
+            'link' => $fw->link,
+            'file_name' => $fw->file_name,
+            'file_mime' => $fw->file_mime,
+            'note' => $fw->note,
+            'submitted_by_source' => $fw->submitted_by_source,
+            'created_at' => $fw->created_at?->toIso8601String(),
+            'download_url' => $fw->file_path ? url('/api/material-requests/'.$materialRequest->id.'/final-work/'.$fw->id.'/file') : null,
+        ])->values();
 
         return response()->json(['request' => $payload]);
     }
@@ -403,5 +421,80 @@ class MaterialRequestController extends Controller
         $audits = $materialRequest->audits()->with('actor')->orderByDesc('created_at')->get();
 
         return response()->json(['audits' => $audits]);
+    }
+
+    public function finalWorkFile(Request $request, MaterialRequest $materialRequest, MaterialRequestFinalWork $finalWork): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        if (! $request->user()?->canDo('material-requests.view')) {
+            abort(403);
+        }
+        if ($finalWork->material_request_id !== $materialRequest->id) {
+            abort(404);
+        }
+        if (! $finalWork->file_path) {
+            abort(404);
+        }
+
+        $disk = 'r2';
+        if (! config("filesystems.disks.{$disk}")) {
+            $disk = 'local';
+        }
+
+        if (Storage::disk($disk)->exists($finalWork->file_path)) {
+            return Storage::disk($disk)->download($finalWork->file_path, $finalWork->file_name ?? basename($finalWork->file_path));
+        }
+
+        abort(404);
+    }
+
+    public function acceptFinalWork(Request $request, MaterialRequest $materialRequest): JsonResponse
+    {
+        if (! $request->user()?->canDo('material-requests.manage')) {
+            abort(403);
+        }
+        if ($materialRequest->requester_type !== 'trainee') {
+            abort(403, 'Final work is only for trainee requests.');
+        }
+
+        $materialRequest->forceFill([
+            'final_work_status' => 'accepted',
+            'final_work_reviewed_at' => now(),
+            'final_work_reviewed_by' => $request->user()?->id,
+            'final_work_review_note' => $request->input('note'),
+        ])->save();
+
+        $this->audit->log($materialRequest, 'final_work_accepted', ['note' => $request->input('note')], $request->user());
+        $this->webhooks->dispatchEvent($materialRequest->fresh(['apiClient']), 'final_work.accepted');
+
+        return response()->json(['message' => 'Final work accepted', 'final_work_status' => $materialRequest->final_work_status]);
+    }
+
+    public function requestFinalWorkChanges(Request $request, MaterialRequest $materialRequest): JsonResponse
+    {
+        if (! $request->user()?->canDo('material-requests.manage')) {
+            abort(403);
+        }
+        if ($materialRequest->requester_type !== 'trainee') {
+            abort(403, 'Final work is only for trainee requests.');
+        }
+
+        $validator = Validator::make($request->all(), [
+            'note' => ['required', 'string', 'max:2000'],
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['message' => 'Validation failed', 'errors' => $validator->errors()], 422);
+        }
+
+        $materialRequest->forceFill([
+            'final_work_status' => 'needs_changes',
+            'final_work_reviewed_at' => now(),
+            'final_work_reviewed_by' => $request->user()?->id,
+            'final_work_review_note' => $validator->validated()['note'],
+        ])->save();
+
+        $this->audit->log($materialRequest, 'final_work_needs_changes', ['note' => $validator->validated()['note']], $request->user());
+        $this->webhooks->dispatchEvent($materialRequest->fresh(['apiClient']), 'final_work.needs_changes');
+
+        return response()->json(['message' => 'Changes requested', 'final_work_status' => $materialRequest->final_work_status]);
     }
 }

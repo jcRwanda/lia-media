@@ -19,7 +19,7 @@ class SendMaterialRequestWebhook implements ShouldQueue
     /**
      * Create a new job instance.
      */
-    public function __construct(public int $materialRequestId, public ?string $previousStatus = null) {}
+    public function __construct(public int $materialRequestId, public ?string $previousStatus = null, public ?string $event = null) {}
 
     /**
      * Execute the job.
@@ -28,6 +28,12 @@ class SendMaterialRequestWebhook implements ShouldQueue
     {
         $request = MaterialRequest::query()->with(['apiClient', 'items.equipmentItem'])->find($this->materialRequestId);
         if (! $request) {
+            return;
+        }
+
+        if ($this->event) {
+            $webhooks->sendEvent($request, $this->event);
+
             return;
         }
 

@@ -72,7 +72,7 @@ class MaterialRequestTest extends TestCase
     public function test_api_catalog_requires_key_or_allows_with_cors_and_key(): void
     {
         config(['material-requests.allowed_origins' => ['https://learning.loveinarts.com']]);
-        $item = EquipmentItem::factory()->create(['total_qty' => 5]);
+        $item = EquipmentItem::factory()->create(['total_qty' => 5, 'allowed_for_trainees' => true]);
 
         $res = $this->withHeaders(['Origin' => 'https://learning.loveinarts.com'])->getJson('/api/v1/material-requests/catalog');
         $res->assertStatus(200);
@@ -86,7 +86,7 @@ class MaterialRequestTest extends TestCase
     public function test_type_specific_validation_and_required_id(): void
     {
         config(['material-requests.allowed_origins' => ['https://learning.loveinarts.com']]);
-        $item = EquipmentItem::factory()->create(['total_qty' => 5]);
+        $item = EquipmentItem::factory()->create(['total_qty' => 5, 'allowed_for_trainees' => true]);
         $cohort = Cohort::query()->create(['name' => 'Cohort A', 'code' => 'COH-A', 'year' => 2026]);
 
         $trainee = $this->payload($item, [
@@ -95,6 +95,9 @@ class MaterialRequestTest extends TestCase
             'phone' => '0780000001',
             'cohort_id' => $cohort->id,
             'id_document' => null,
+            'shoot_location' => 'Kigali',
+            'shoot_type' => 'video',
+            'terms_credit' => true,
         ]);
         $this->withHeaders(['Origin' => 'https://learning.loveinarts.com'])->postJson('/api/v1/material-requests/submit', $trainee)->assertStatus(201);
 
@@ -117,7 +120,7 @@ class MaterialRequestTest extends TestCase
     public function test_signature_date_project_location_copy_and_bilingual_config(): void
     {
         config(['material-requests.allowed_origins' => ['https://learning.loveinarts.com']]);
-        $item = EquipmentItem::factory()->create(['total_qty' => 5]);
+        $item = EquipmentItem::factory()->create(['total_qty' => 5, 'allowed_for_trainees' => true]);
         $cohort = Cohort::query()->create(['name' => 'Alumni Cohort', 'code' => 'AL-1', 'year' => 2025]);
 
         $config = $this->withHeaders(['Origin' => 'https://learning.loveinarts.com'])->getJson('/api/v1/material-requests/config')->assertOk();
@@ -196,7 +199,7 @@ class MaterialRequestTest extends TestCase
     {
         Mail::fake();
         config(['material-requests.allowed_origins' => ['https://learning.loveinarts.com']]);
-        $item = EquipmentItem::factory()->create(['total_qty' => 5]);
+        $item = EquipmentItem::factory()->create(['total_qty' => 5, 'allowed_for_trainees' => true]);
 
         $first = $this->payload($item, ['email' => 'returning@example.com', 'phone' => '0783333333']);
         $this->withHeaders(['Origin' => 'https://learning.loveinarts.com'])->postJson('/api/v1/material-requests/submit', $first)->assertStatus(201);

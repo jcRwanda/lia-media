@@ -41,9 +41,12 @@ class MaterialRequest extends Model
         'project_cell',
         'project_village',
         'project_location',
+        'shoot_location',
+        'shoot_type',
         'needed_from',
         'return_by',
         'terms_accepted',
+        'terms_credit',
         'consent_declaration',
         'program_cohort',
         'cohort_id',
@@ -59,6 +62,11 @@ class MaterialRequest extends Model
         'signature_path',
         'signature_date',
         'status',
+        'final_work_status',
+        'final_work_submitted_at',
+        'final_work_reviewed_at',
+        'final_work_reviewed_by',
+        'final_work_review_note',
         'review_note',
         'reviewed_by',
         'reviewed_at',
@@ -74,6 +82,7 @@ class MaterialRequest extends Model
     {
         return [
             'terms_accepted' => 'boolean',
+            'terms_credit' => 'boolean',
             'consent_declaration' => 'boolean',
             'needed_from' => 'date',
             'return_by' => 'date',
@@ -82,6 +91,8 @@ class MaterialRequest extends Model
             'approved_at' => 'datetime',
             'rejected_at' => 'datetime',
             'closed_at' => 'datetime',
+            'final_work_submitted_at' => 'datetime',
+            'final_work_reviewed_at' => 'datetime',
         ];
     }
 
@@ -135,6 +146,16 @@ class MaterialRequest extends Model
     public function audits(): HasMany
     {
         return $this->hasMany(MaterialRequestAudit::class);
+    }
+
+    public function finalWorks(): HasMany
+    {
+        return $this->hasMany(MaterialRequestFinalWork::class);
+    }
+
+    public function finalWorkReviewedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'final_work_reviewed_by');
     }
 
     public function isOverdue(): bool

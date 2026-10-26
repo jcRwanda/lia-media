@@ -61,9 +61,11 @@ Each field includes `key`, `type`, `required`, `section` and `label.en` / `label
 `options`; Rwanda address fields use `options_source: "rwanda_divisions"` with `level` and `depends_on`.
 Cohorts are also available directly in `options.cohorts`.
 
-### `GET /catalog`
+- Trainee forms are much shorter. In `config/material-requests.php` per-type `field_sets` define fields. Trainee fields (exact): `full_name`, `phone`, `email`, `cohort_id`, `student_alumni_id` (optional), `items`, `needed_from`, `end_date`/`return_by`, `shoot_location` (required text), `shoot_type` (required select: `video|photo|both` with bilingual labels), `project_name` (optional), `purpose_project_description`/`project_summary` (optional short), `terms_credit`, `consent_declaration`, `signature`. No residential address, emergency contact, project-location cascade or ID upload for trainees. `form-schema?type=trainee` returns only these; validation follows the same per-type config.
 
-Returns requestable equipment with its total stock:
+### `GET /catalog?type=client|trainee|alumni`
+
+Returns requestable equipment with its total stock. For `type=trainee`, only items with `allowed_for_trainees=true` are returned. Each item always includes `allowed_for_trainees`.
 
 ```json
 {
@@ -74,13 +76,14 @@ Returns requestable equipment with its total stock:
       "category": "camera",
       "condition": "good",
       "available_qty": 4,
+      "allowed_for_trainees": true,
       "photo_path": "material-requests/equipment/..."
     }
   ]
 }
 ```
 
-### `GET /availability?item_ids[]=12&item_ids[]=14&from=2026-11-01&to=2026-11-30`
+### `GET /availability?item_ids[]=12&item_ids[]=14&from=2026-11-01&to=2026-11-30&type=trainee`
 
 Returns reservations, blocks and per-day availability for the requested items. `item_ids` is optional; if omitted, availability is returned for all active items. `from` defaults to today and `to`
 defaults to 90 days later; the range may not exceed 366 days.
@@ -132,7 +135,7 @@ Response (abridged):
 ```
 
 Only **approved** and **issued** requests reserve stock. A submitted request does not block the dates until it is
-approved. `booked_dates` means at least one unit is reserved; use `daily.*.available_qty` for partial availability.
+approved. `booked_dates` means at least one unit is reserved; use `daily.*.available_qty` for partial availability. For `type=trainee`, availability is limited to `allowed_for_trainees` items. `/submit` rejects non-allowed items for trainees with a per-item validation error (e.g. `items.0.equipment_item_id`).
 
 ### `POST /submit`
 
@@ -388,6 +391,24 @@ const request = await lia('/submit', {
 
 const status = await lia(`/${request.reference_code}`);
 ```
+
+
+
+## Final work (trainee requests)
+
+Trainee requests require final work submission after equipment is issued/returned depending on workflow. Endpoints (staff session):
+
+- `GET /api/material-requests/{id}` includes `final_work_status` (`not_required`, `pending`, `submitted`, `needs_changes`, `accepted`), `final_work_submitted_at`, `final_work_reviewed_at`, `final_work_review_note`, `final_work_reviewed_by`, and `final_works` array with `id`, `file_name`, `uploaded_at`, `download_url` (staff download via `GET /api/material-requests/{id}/final-work/{finalWork}/file`).
+- `POST /api/material-requests/{materialRequest}/final-work/accept` (requires `material-requests.manage`) — marks as `accepted`. Optional JSON `{ "note": "..." }`.
+- `POST /api/material-requests/{materialRequest}/final-work/request-changes` (requires `material-requests.manage`) — sets `needs_changes`. Body `{ "note": "..." }` required (max 2000).
+
+Public/trainee submission (signed/token or session as implemented):
+
+- `POST /api/v1/material-requests/{reference}/final-work/upload-url` — get presigned/upload URL for final work (R2/local).
+- `POST /api/v1/material-requests/{reference}/final-work` — submit uploaded final work; moves status to `submitted` if not already `accepted`.
+- When `issued` or `returned` and `final_work_status === 'not_required'`, the system auto-sets `final_work_status` to `pending` for trainee requests.
+
+Webhook events: `final_work.submitted`, `final_work.accepted`, `final_work.needs_changes` are dispatched with `final_work_status` in payload.
 
 ## Hosted form compatibility
 

@@ -63,6 +63,12 @@ Route::middleware('throttle:share')->prefix('s/{token}')->where(['token' => '[A-
     Route::post('/download', [PublicShareController::class, 'downloadZip']);
 });
 
+Route::middleware(['material.cors', 'material.client', 'throttle:api'])->prefix('v1/material-requests')->group(function () {
+    Route::get('/{reference}', [MaterialRequestPublicController::class, 'showByReference'])->where('reference', 'MR-[A-Za-z0-9]+');
+    Route::post('/{reference}/final-work', [MaterialRequestPublicController::class, 'submitFinalWork'])->where('reference', 'MR-[A-Za-z0-9]+');
+    Route::post('/{reference}/final-work/upload-url', [MaterialRequestPublicController::class, 'finalWorkUploadUrl'])->where('reference', 'MR-[A-Za-z0-9]+');
+});
+
 Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function () {
     // Available before the temporary password has been replaced.
     Route::post('/auth/logout', [AuthController::class, 'logout']);
@@ -171,10 +177,13 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
             Route::get('/material-requests/{materialRequest}/audits', [MaterialRequestController::class, 'audits']);
             Route::get('/material-requests/{materialRequest}/id-document', [MaterialRequestController::class, 'idDocument']);
             Route::get('/material-requests/{materialRequest}/signature', [MaterialRequestController::class, 'signature']);
+            Route::get('/material-requests/{materialRequest}/final-work/{finalWork}/file', [MaterialRequestController::class, 'finalWorkFile']);
         });
         Route::middleware('can:material-requests.manage')->group(function () {
             Route::post('/material-requests/{materialRequest}/approve', [MaterialRequestController::class, 'approve']);
             Route::post('/material-requests/{materialRequest}/reject', [MaterialRequestController::class, 'reject']);
+            Route::post('/material-requests/{materialRequest}/final-work/accept', [MaterialRequestController::class, 'acceptFinalWork']);
+            Route::post('/material-requests/{materialRequest}/final-work/request-changes', [MaterialRequestController::class, 'requestFinalWorkChanges']);
         });
         Route::middleware('can:material-requests.issue')->group(function () {
             Route::post('/material-requests/{materialRequest}/issue', [MaterialRequestController::class, 'issue']);

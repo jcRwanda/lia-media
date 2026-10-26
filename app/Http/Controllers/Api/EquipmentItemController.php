@@ -34,6 +34,7 @@ class EquipmentItemController extends Controller
             'asset_tag' => ['nullable', 'string', 'max:255'],
             'condition' => ['nullable', 'string', 'max:255'],
             'total_qty' => ['required', 'integer', 'min:0'],
+            'allowed_for_trainees' => ['nullable', 'boolean'],
             'photo' => ['nullable', 'image', 'max:5120'],
         ]);
 
@@ -76,6 +77,7 @@ class EquipmentItemController extends Controller
             'asset_tag' => ['nullable', 'string', 'max:255'],
             'condition' => ['nullable', 'string', 'max:255'],
             'total_qty' => ['sometimes', 'integer', 'min:0'],
+            'allowed_for_trainees' => ['nullable', 'boolean'],
             'photo' => ['nullable', 'image', 'max:5120'],
         ]);
 

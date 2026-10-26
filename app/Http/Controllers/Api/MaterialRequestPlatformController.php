@@ -18,7 +18,11 @@ class MaterialRequestPlatformController extends Controller
             'type' => ['nullable', Rule::in(config('material-requests.requester_types', ['client', 'trainee', 'alumni']))],
         ]);
 
-        return response()->json($this->schemas->build($data['type'] ?? 'client'));
+        $schema = $this->schemas->build($data['type'] ?? 'client');
+        $schema['field_sets'] = config('material-requests.field_sets');
+        $schema['trainee_fields'] = config('material-requests.field_sets.trainee', []);
+
+        return response()->json($schema);
     }
 
     public function openapi(): JsonResponse
@@ -127,6 +131,10 @@ class MaterialRequestPlatformController extends Controller
                             'source' => ['type' => ['string', 'null']],
                             'source_detail' => ['type' => ['string', 'null']],
                             'items' => ['type' => 'array', 'items' => ['type' => 'object']],
+                            'final_work_status' => ['type' => ['string', 'null'], 'enum' => ['not_required', 'pending', 'submitted', 'needs_changes', 'accepted']],
+                            'final_work_submitted_at' => ['type' => ['string', 'null'], 'format' => 'date-time'],
+                            'final_work_reviewed_at' => ['type' => ['string', 'null'], 'format' => 'date-time'],
+                            'final_work_review_note' => ['type' => ['string', 'null']],
                         ],
                     ],
                 ],

@@ -65,6 +65,22 @@ export default function MaterialRequestDetailPage() {
         onSuccess: () => qc.invalidateQueries({ queryKey: ['material-request', id] }),
     });
 
+    const acceptFinal = useMutation({
+        mutationFn: async () => {
+            const res = await api<any>(`/material-requests/${id}/final-work/accept`, { method: 'POST', json: { note } });
+            return res;
+        },
+        onSuccess: () => qc.invalidateQueries({ queryKey: ['material-request', id] }),
+    });
+
+    const requestChanges = useMutation({
+        mutationFn: async () => {
+            const res = await api<any>(`/material-requests/${id}/final-work/request-changes`, { method: 'POST', json: { note } });
+            return res;
+        },
+        onSuccess: () => qc.invalidateQueries({ queryKey: ['material-request', id] }),
+    });
+
     if (isLoading || !data) return <div className="p-4">Loading...</div>;
 
     return (
@@ -183,6 +199,53 @@ export default function MaterialRequestDetailPage() {
                         </div>
                     ))}
                     <button onClick={()=>ret.mutate()} className="px-3 py-1 bg-amber-600 text-white rounded text-sm">Record Return</button>
+                </div>
+            )}
+
+            {data.requester_type === 'trainee' && (
+                <div className="border rounded p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                        <div className="font-medium">Final work</div>
+                        <span className="px-2 py-1 rounded bg-neutral-100 capitalize">{data.final_work_status || '—'}</span>
+                    </div>
+                    {(data.final_works || []).length > 0 ? (
+                        <ul className="space-y-1 text-sm">
+                            {(data.final_works || []).map((fw: any) => (
+                                <li key={fw.id} className="flex items-center justify-between border-t pt-1">
+                                    <div>
+                                        <div>{fw.file_name || 'Final work'}</div>
+                                        {fw.uploaded_at && <div className="text-neutral-500 text-xs">{fw.uploaded_at}</div>}
+                                    </div>
+                                    {fw.download_url ? (
+                                        <a className="text-blue-600 underline" href={fw.download_url} target="_blank" rel="noreferrer">Download</a>
+                                    ) : null}
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <div className="text-sm text-neutral-500">No final work uploaded yet.</div>
+                    )}
+                    {data.final_work_submitted_at && (
+                        <div className="text-xs text-neutral-500">Submitted: {data.final_work_submitted_at}</div>
+                    )}
+                    {data.final_work_reviewed_at && (
+                        <div className="text-xs text-neutral-500">Reviewed: {data.final_work_reviewed_at}{data.final_work_reviewed_by ? ` by ${data.final_work_reviewed_by}` : ''}</div>
+                    )}
+                    {data.final_work_review_note && (
+                        <div className="text-sm border-t pt-2">
+                            <div className="font-medium">Review note</div>
+                            <div>{data.final_work_review_note}</div>
+                        </div>
+                    )}
+                    {(data.final_work_status === 'submitted' || data.final_work_status === 'needs_changes') && (
+                        <div className="space-y-2 border-t pt-2">
+                            <textarea value={note} onChange={(e)=>setNote(e.target.value)} placeholder="Note for trainee" className="w-full border rounded p-2 text-sm" />
+                            <div className="flex gap-2">
+                                <button onClick={()=>acceptFinal.mutate()} className="px-3 py-1 bg-green-600 text-white rounded text-sm">Accept final work</button>
+                                <button onClick={()=>requestChanges.mutate()} className="px-3 py-1 bg-amber-600 text-white rounded text-sm">Request changes</button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 

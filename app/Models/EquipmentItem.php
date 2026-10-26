@@ -18,6 +18,7 @@ class EquipmentItem extends Model
         'asset_tag',
         'condition',
         'total_qty',
+        'allowed_for_trainees',
         'photo_path',
     ];
 
@@ -25,6 +26,7 @@ class EquipmentItem extends Model
     {
         return [
             'total_qty' => 'integer',
+            'allowed_for_trainees' => 'boolean',
         ];
     }
 

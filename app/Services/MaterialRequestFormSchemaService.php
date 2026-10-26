@@ -17,6 +17,7 @@ class MaterialRequestFormSchemaService
         'residential_address' => ['en' => 'Residential address', 'kn' => 'Aderesi yo guturamo'],
         'emergency_contact' => ['en' => 'Emergency contact', 'kn' => 'Umuntu wo guhamagara mu gihe gikomeye'],
         'request' => ['en' => 'Request', 'kn' => 'Ubusabe'],
+        'project' => ['en' => 'Project', 'kn' => 'Umushinga'],
         'project_location' => ['en' => 'Project location', 'kn' => 'Aho umushinga uzabera'],
         'programme' => ['en' => 'Programme', 'kn' => 'Porogaramu'],
         'declarations' => ['en' => 'Declarations', 'kn' => 'Ibyemezo'],
@@ -46,80 +47,123 @@ class MaterialRequestFormSchemaService
             ->values()
             ->all();
 
-        $fields = [
-            $this->field('requester_type', 'select', true, 'personal', $labels, [
-                'options' => $this->requesterTypeOptions(),
-            ]),
-            $this->field('full_name', 'text', true, 'personal', $labels, ['max_length' => 255]),
-            $this->field('phone', 'tel', true, 'personal', $labels, ['max_length' => 50]),
-            $this->field('email', 'email', true, 'personal', $labels, ['max_length' => 255]),
-            $this->field('project_name', 'text', true, 'personal', $labels, ['max_length' => 255]),
-            $this->field('national_id', 'text', false, 'personal', $labels, ['max_length' => 100]),
+        if ($type === 'trainee') {
+            $fields = [
+                $this->field('requester_type', 'select', true, 'personal', $labels, [
+                    'options' => $this->requesterTypeOptions(),
+                ]),
+                $this->field('full_name', 'text', true, 'personal', $labels, ['max_length' => 255]),
+                $this->field('phone', 'tel', true, 'personal', $labels, ['max_length' => 50]),
+                $this->field('email', 'email', true, 'personal', $labels, ['max_length' => 255]),
+                $this->field('cohort_id', 'select', true, 'programme', $labels, [
+                    'options' => $cohorts,
+                    'aliases' => ['cohort'],
+                ]),
+                $this->field('student_alumni_id', 'text', false, 'programme', $labels, [
+                    'max_length' => 255,
+                    'aliases' => ['student_id'],
+                ]),
+                $this->field('items', 'items', true, 'request', $labels, [
+                    'min_items' => 1,
+                    'catalog_url' => url('/api/v1/material-requests/catalog?type=trainee'),
+                ]),
+                $this->field('needed_from', 'date', true, 'request', $labels, ['aliases' => ['start_date']]),
+                $this->field('return_by', 'date', true, 'request', $labels, ['aliases' => ['end_date']]),
+                $this->field('shoot_location', 'text', true, 'project', $labels, ['max_length' => 500]),
+                $this->field('shoot_type', 'select', true, 'project', $labels, [
+                    'options' => [
+                        ['value' => 'video', 'label' => ['en' => 'Video', 'kn' => 'Video']],
+                        ['value' => 'photo', 'label' => ['en' => 'Photo', 'kn' => 'Ifoto']],
+                        ['value' => 'both', 'label' => ['en' => 'Both', 'kn' => 'Byombi']],
+                    ],
+                    'bilingual_labels' => true,
+                ]),
+                $this->field('project_name', 'text', false, 'project', $labels, ['max_length' => 255]),
+                $this->field('purpose_project_description', 'textarea', false, 'project', $labels, [
+                    'aliases' => ['project_summary'],
+                    'max_length' => 1000,
+                ]),
+                $this->field('terms_credit', 'checkbox', true, 'declarations', $labels),
+                $this->field('consent_declaration', 'checkbox', true, 'declarations', $labels),
+                $this->field('signature', 'signature', true, 'documents', $labels),
+                $this->field('source_detail', 'text', false, 'metadata', $labels, ['max_length' => 255]),
+            ];
+        } else {
+            $fields = [
+                $this->field('requester_type', 'select', true, 'personal', $labels, [
+                    'options' => $this->requesterTypeOptions(),
+                ]),
+                $this->field('full_name', 'text', true, 'personal', $labels, ['max_length' => 255]),
+                $this->field('phone', 'tel', true, 'personal', $labels, ['max_length' => 50]),
+                $this->field('email', 'email', true, 'personal', $labels, ['max_length' => 255]),
+                $this->field('project_name', 'text', true, 'personal', $labels, ['max_length' => 255]),
+                $this->field('national_id', 'text', false, 'personal', $labels, ['max_length' => 100]),
 
-            $this->field('province_res', 'select', false, 'residential_address', $labels, $this->divisionRule('province')),
-            $this->field('district_res', 'select', false, 'residential_address', $labels, $this->divisionRule('district', 'province_res')),
-            $this->field('sector_res', 'select', false, 'residential_address', $labels, $this->divisionRule('sector', 'district_res')),
-            $this->field('cell_res', 'select', false, 'residential_address', $labels, $this->divisionRule('cell', 'sector_res')),
-            $this->field('village_res', 'select', false, 'residential_address', $labels, array_merge($this->divisionRule('village', 'cell_res'), ['allow_custom' => true])),
-            $this->field('residential_address', 'text', false, 'residential_address', $labels, ['max_length' => 500]),
+                $this->field('province_res', 'select', false, 'residential_address', $labels, $this->divisionRule('province')),
+                $this->field('district_res', 'select', false, 'residential_address', $labels, $this->divisionRule('district', 'province_res')),
+                $this->field('sector_res', 'select', false, 'residential_address', $labels, $this->divisionRule('sector', 'district_res')),
+                $this->field('cell_res', 'select', false, 'residential_address', $labels, $this->divisionRule('cell', 'sector_res')),
+                $this->field('village_res', 'select', false, 'residential_address', $labels, array_merge($this->divisionRule('village', 'cell_res'), ['allow_custom' => true])),
+                $this->field('residential_address', 'text', false, 'residential_address', $labels, ['max_length' => 500]),
 
-            $this->field('emergency_contact_name', 'text', true, 'emergency_contact', $labels, ['max_length' => 255]),
-            $this->field('emergency_contact_phone', 'tel', true, 'emergency_contact', $labels, ['max_length' => 50]),
-            $this->field('relationship', 'text', true, 'emergency_contact', $labels, ['max_length' => 255]),
+                $this->field('emergency_contact_name', 'text', true, 'emergency_contact', $labels, ['max_length' => 255]),
+                $this->field('emergency_contact_phone', 'tel', true, 'emergency_contact', $labels, ['max_length' => 50]),
+                $this->field('relationship', 'text', true, 'emergency_contact', $labels, ['max_length' => 255]),
 
-            $this->field('purpose_project_description', 'textarea', true, 'request', $labels, [
-                'aliases' => ['project_summary'],
-            ]),
-            $this->field('items', 'items', true, 'request', $labels, [
-                'min_items' => 1,
-                'catalog_url' => url('/api/v1/material-requests/catalog'),
-            ]),
-            $this->field('needed_from', 'date', true, 'request', $labels, ['aliases' => ['start_date']]),
-            $this->field('return_by', 'date', true, 'request', $labels, ['aliases' => ['end_date']]),
+                $this->field('purpose_project_description', 'textarea', true, 'request', $labels, [
+                    'aliases' => ['project_summary'],
+                ]),
+                $this->field('items', 'items', true, 'request', $labels, [
+                    'min_items' => 1,
+                    'catalog_url' => url('/api/v1/material-requests/catalog'),
+                ]),
+                $this->field('needed_from', 'date', true, 'request', $labels, ['aliases' => ['start_date']]),
+                $this->field('return_by', 'date', true, 'request', $labels, ['aliases' => ['end_date']]),
 
-            $this->field('project_same_as_residential', 'checkbox', false, 'project_location', $labels),
-            $this->field('project_province', 'select', false, 'project_location', $labels, $this->divisionRule('province')),
-            $this->field('project_district', 'select', false, 'project_location', $labels, $this->divisionRule('district', 'project_province')),
-            $this->field('project_sector', 'select', false, 'project_location', $labels, $this->divisionRule('sector', 'project_district')),
-            $this->field('project_cell', 'select', false, 'project_location', $labels, $this->divisionRule('cell', 'project_sector')),
-            $this->field('project_village', 'select', false, 'project_location', $labels, array_merge($this->divisionRule('village', 'project_cell'), ['allow_custom' => true])),
-            $this->field('project_location', 'text', false, 'project_location', $labels, ['max_length' => 500]),
+                $this->field('project_same_as_residential', 'checkbox', false, 'project_location', $labels),
+                $this->field('project_province', 'select', false, 'project_location', $labels, $this->divisionRule('province')),
+                $this->field('project_district', 'select', false, 'project_location', $labels, $this->divisionRule('district', 'project_province')),
+                $this->field('project_sector', 'select', false, 'project_location', $labels, $this->divisionRule('sector', 'project_district')),
+                $this->field('project_cell', 'select', false, 'project_location', $labels, $this->divisionRule('cell', 'project_sector')),
+                $this->field('project_village', 'select', false, 'project_location', $labels, array_merge($this->divisionRule('village', 'project_cell'), ['allow_custom' => true])),
+                $this->field('project_location', 'text', false, 'project_location', $labels, ['max_length' => 500]),
 
-            $this->field('cohort_id', 'select', $cohortRequired, 'programme', $labels, [
-                'options' => $cohorts,
-                'aliases' => ['cohort'],
-            ]),
-            $this->field('program_cohort', 'text', false, 'programme', $labels, ['max_length' => 255]),
-            $this->field('graduation_completion_year', 'text', false, 'programme', $labels, ['max_length' => 10]),
-            $this->field('student_alumni_id', 'text', false, 'programme', $labels, [
-                'max_length' => 255,
-                'aliases' => ['student_id'],
-            ]),
-            $this->field('project_title', 'text', false, 'programme', $labels, ['max_length' => 255]),
-            $this->field('project_type', 'text', false, 'programme', $labels, ['max_length' => 255]),
-            $this->field('expected_outcome', 'textarea', false, 'programme', $labels),
-            $this->field('portfolio_social_link', 'url', false, 'programme', $labels, ['max_length' => 500]),
+                $this->field('cohort_id', 'select', $cohortRequired, 'programme', $labels, [
+                    'options' => $cohorts,
+                    'aliases' => ['cohort'],
+                ]),
+                $this->field('program_cohort', 'text', false, 'programme', $labels, ['max_length' => 255]),
+                $this->field('graduation_completion_year', 'text', false, 'programme', $labels, ['max_length' => 10]),
+                $this->field('student_alumni_id', 'text', false, 'programme', $labels, [
+                    'max_length' => 255,
+                    'aliases' => ['student_id'],
+                ]),
+                $this->field('project_title', 'text', false, 'programme', $labels, ['max_length' => 255]),
+                $this->field('project_type', 'text', false, 'programme', $labels, ['max_length' => 255]),
+                $this->field('expected_outcome', 'textarea', false, 'programme', $labels),
+                $this->field('portfolio_social_link', 'url', false, 'programme', $labels, ['max_length' => 500]),
 
-            $this->field('terms_accepted', 'checkbox', true, 'declarations', $labels),
-            $this->field('consent_declaration', 'checkbox', true, 'declarations', $labels),
-            $this->field('signature', 'signature', true, 'documents', $labels),
-            $this->field('id_document', 'file', $idRequired, 'documents', $labels),
+                $this->field('terms_accepted', 'checkbox', true, 'declarations', $labels),
+                $this->field('consent_declaration', 'checkbox', true, 'declarations', $labels),
+                $this->field('signature', 'signature', true, 'documents', $labels),
+                $this->field('id_document', 'file', $idRequired, 'documents', $labels),
 
-            $this->field('source_detail', 'text', false, 'metadata', $labels, ['max_length' => 255]),
-        ];
+                $this->field('source_detail', 'text', false, 'metadata', $labels, ['max_length' => 255]),
+            ];
 
-        if (! in_array($type, ['trainee', 'alumni'], true)) {
-            $fields = array_values(array_filter(
-                $fields,
-                fn (array $field) => ! in_array($field['key'], [
-                    'graduation_completion_year',
-                    'student_alumni_id',
-                    'project_title',
-                    'project_type',
-                    'expected_outcome',
-                    'portfolio_social_link',
-                ], true),
-            ));
+            if (! in_array($type, ['trainee', 'alumni'], true)) {
+                $fields = array_values(array_filter(
+                    $fields,
+                    fn (array $field) => ! in_array($field['key'], [
+                        'graduation_completion_year',
+                        'student_alumni_id',
+                        'project_title',
+                        'project_type',
+                        'expected_outcome',
+                        'portfolio_social_link',
+                    ], true),
+                ));
+            }
         }
 
         return [
