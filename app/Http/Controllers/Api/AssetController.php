@@ -123,7 +123,10 @@ class AssetController extends Controller
             'items' => ['required', 'array', 'min:1', 'max:'.DownloadService::MAX_ZIP_ITEMS],
             'items.*' => ['string', 'max:64'],
         ]);
-        $assets = Asset::query()->with('derivatives')->whereIn('uuid', $data['items'])->get();
+        $wanted = collect($data['items'])->unique()->values();
+        $byUuid = Asset::query()->with('derivatives')->whereIn('uuid', $wanted)->get()->keyBy('uuid');
+        // Keep the order the browser sent, so the archive mirrors the selection.
+        $assets = $wanted->map(fn (string $uuid) => $byUuid->get($uuid))->filter()->values();
         $files = $downloads->downloadable($assets);
         abort_if($files->isEmpty(), 404, 'None of the selected items have a downloadable copy.');
 

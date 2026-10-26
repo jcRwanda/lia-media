@@ -200,6 +200,7 @@ class ShareService
             'uuid' => $a->uuid, 'kind' => $a->kind, 'title' => $a->title, 'width' => $a->width, 'height' => $a->height, 'credit' => $a->credit,
             'thumb_url' => $this->present->derivUrl($a, 'thumb'),
             'preview_url' => $this->present->derivUrl($a, 'preview') ?? $this->present->derivUrl($a, 'poster') ?? $this->present->derivUrl($a, 'thumb'),
+            'original_url' => $this->storage->presignGet($a->storage_key, config('media.ttl.preview'), $a->original_filename, true),
         ];
     }
 

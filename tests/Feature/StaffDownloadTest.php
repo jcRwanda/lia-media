@@ -94,6 +94,21 @@ class StaffDownloadTest extends TestCase
         $this->assertSame(1, AuditLog::query()->where('action', 'asset.downloaded')->count());
     }
 
+    public function test_the_selection_zip_keeps_the_order_the_browser_sent(): void
+    {
+        $r = $this->actingAs($this->staff)->postJson('/api/assets/download', ['items' => [
+            $this->a['two']->uuid,
+            $this->a['one']->uuid,
+            $this->a['two']->uuid,
+        ]]);
+
+        $r->assertOk();
+        $this->assertSame([
+            'two.jpg' => 'ORIG-two',
+            'one.jpg' => 'ORIG-one',
+        ], $this->zipEntries($r->streamedContent()));
+    }
+
     public function test_the_selection_zip_validates_the_batch_and_404s_when_nothing_can_be_sent(): void
     {
         $this->actingAs($this->staff)->postJson('/api/assets/download', [])->assertUnprocessable();

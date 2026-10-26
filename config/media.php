@@ -36,7 +36,7 @@ return [
 
     'derivatives' => [
         'thumb' => ['max' => 480, 'mimes' => ['image/webp', 'image/jpeg']],
-        'preview' => ['max' => 1920, 'mimes' => ['image/webp', 'image/jpeg']],
+        'preview' => ['max' => 1920, 'mimes' => ['image/webp', 'image/jpeg', 'video/mp4']],
         'poster' => ['max' => 1920, 'mimes' => ['image/webp', 'image/jpeg']],
     ],
     'derivative_max_bytes' => 8 * 1024 * 1024,

@@ -102,6 +102,16 @@ class UploadTest extends TestCase
         $this->assertArrayNotHasKey($this->keyOf($b['upload']['uuid']), $this->r2->objects);
     }
 
+    public function test_follow_up_request_does_not_treat_a_new_session_as_expired(): void
+    {
+        config(['media.multipart_threshold' => 1]);
+        $res = $this->init('hello world', ['filename' => 'film.mp4', 'mime_type' => 'video/mp4'])->assertCreated()->json();
+        $this->travel(5)->seconds();
+
+        $this->actingAs($this->mm)->postJson("/api/uploads/{$res['upload']['uuid']}/parts", ['part_numbers' => [1]])->assertOk();
+        $this->assertTrue(UploadSession::first()->expires_at->isFuture());
+    }
+
     public function test_multipart_resume_complete_and_server_checksum_job(): void
     {
         config(['media.multipart_threshold' => 999, 'media.part_size' => 400]);
@@ -183,5 +193,18 @@ class UploadTest extends TestCase
         $this->actingAs($this->mm)->postJson("/api/assets/{$uuid}/derivatives/thumb/complete")->assertStatus(422);
         $this->r2->simulatePut("derivatives/{$uuid}/thumb.webp", '12345', 'image/webp');
         $this->actingAs($this->mm)->postJson("/api/assets/{$uuid}/derivatives/thumb/complete")->assertOk()->assertJsonPath('derivative.status', 'ready');
+    }
+
+    public function test_multipart_upload_id_can_store_long_r2_upload_ids(): void
+    {
+        config(['media.multipart_threshold' => 1]);
+        $longUploadId = str_repeat('A', 500);
+        $body = random_bytes(500);
+
+        $res = $this->init($body, ['filename' => 'big.mp4', 'mime_type' => 'video/mp4'])->assertCreated()->json();
+        UploadSession::where('uuid', $res['upload']['uuid'])->update(['upload_id' => $longUploadId]);
+
+        $this->assertSame($longUploadId, UploadSession::where('uuid', $res['upload']['uuid'])->value('upload_id'));
+        $this->assertNotNull(UploadSession::where('uuid', $res['upload']['uuid'])->value('upload_id'));
     }
 }

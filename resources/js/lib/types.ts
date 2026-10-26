@@ -67,6 +67,7 @@ export interface AssetCard {
     created_at: string;
     captured_at: string | null;
     thumb_url: string | null;
+    original_url?: string | null;
     position?: number;
 }
 

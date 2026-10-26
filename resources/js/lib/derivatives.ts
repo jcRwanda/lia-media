@@ -35,6 +35,11 @@ export async function imageRenditions(file: File): Promise<{ renditions: Renditi
     return { renditions, ...dims };
 }
 
+function sanitizedDimension(value: number | undefined): number | undefined {
+    if (value === undefined) return undefined;
+    return Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
 /** Video: grab a frame ~1s in (or 10%) for poster + thumb. */
 export async function videoRenditions(file: File): Promise<{ renditions: Rendition[]; width: number; height: number; duration_ms: number }> {
     const url = URL.createObjectURL(file);
@@ -44,11 +49,17 @@ export async function videoRenditions(file: File): Promise<{ renditions: Renditi
         v.preload = 'metadata';
         v.src = url;
         await new Promise<void>((res, rej) => { v.onloadedmetadata = () => res(); v.onerror = () => rej(new Error('This browser cannot read the video for a poster frame.')); });
+        const width = sanitizedDimension(v.videoWidth);
+        const height = sanitizedDimension(v.videoHeight);
+        if (!width || !height) {
+            throw new Error('This video does not expose valid dimensions.');
+        }
         v.currentTime = Math.min(1, (v.duration || 1) * 0.1);
         await new Promise<void>((res) => { v.onseeked = () => res(); });
         const renditions: Rendition[] = [];
-        for (const type of ['poster', 'thumb'] as const) renditions.push({ type, ...(await toBlob(v, v.videoWidth, v.videoHeight, SIZES[type])) });
-        return { renditions, width: v.videoWidth, height: v.videoHeight, duration_ms: Math.round((v.duration || 0) * 1000) };
+        for (const type of ['poster', 'thumb'] as const) renditions.push({ type, ...(await toBlob(v, width, height, SIZES[type])) });
+        const durationMs = Number.isFinite(v.duration) && v.duration > 0 ? Math.round(v.duration * 1000) : 0;
+        return { renditions, width, height, duration_ms: durationMs };
     } finally {
         URL.revokeObjectURL(url);
     }

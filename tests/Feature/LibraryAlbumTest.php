@@ -83,14 +83,16 @@ class LibraryAlbumTest extends TestCase
     public function test_taxonomy_crud_slug_and_in_use_guard(): void
     {
         $mm = User::factory()->role('multimedia')->create();
-        $id = $this->actingAs($mm)->postJson('/api/taxonomy/events', ['title' => 'Film Festival', 'occurred_on' => '2026-11-02'])->assertCreated()->json('data.id');
+        $admin = User::factory()->role('admin')->create();
+        $this->actingAs($mm)->postJson('/api/taxonomy/events', ['title' => 'Film Festival', 'occurred_on' => '2026-11-02'])->assertForbidden();
+        $id = $this->actingAs($admin)->postJson('/api/taxonomy/events', ['title' => 'Film Festival', 'occurred_on' => '2026-11-02'])->assertCreated()->json('data.id');
         $this->assertSame('film-festival-2026', Event::find($id)->slug);
-        $this->actingAs($mm)->postJson('/api/taxonomy/events', ['title' => 'Film Festival', 'occurred_on' => '2026-11-02'])->assertCreated()->assertJsonPath('data.slug', 'film-festival-2026-2');
-        $this->actingAs($mm)->postJson('/api/taxonomy/cohorts', ['name' => 'Cohort 4', 'code' => 'C4', 'year' => 2026])->assertCreated();
-        $this->actingAs($mm)->postJson('/api/taxonomy/cohorts', ['name' => 'Again', 'code' => 'C4'])->assertStatus(422);
-        $this->actingAs($mm)->postJson('/api/taxonomy/nope', ['name' => 'x'])->assertNotFound();
+        $this->actingAs($admin)->postJson('/api/taxonomy/events', ['title' => 'Film Festival', 'occurred_on' => '2026-11-02'])->assertCreated()->assertJsonPath('data.slug', 'film-festival-2026-2');
+        $this->actingAs($admin)->postJson('/api/taxonomy/cohorts', ['name' => 'Cohort 4', 'code' => 'C4', 'year' => 2026])->assertCreated();
+        $this->actingAs($admin)->postJson('/api/taxonomy/cohorts', ['name' => 'Again', 'code' => 'C4'])->assertStatus(422);
+        $this->actingAs($admin)->postJson('/api/taxonomy/nope', ['name' => 'x'])->assertNotFound();
         Asset::factory()->create(['event_id' => $id]);
-        $this->actingAs($mm)->deleteJson("/api/taxonomy/events/{$id}")->assertStatus(422);
+        $this->actingAs($admin)->deleteJson("/api/taxonomy/events/{$id}")->assertStatus(422);
         $this->actingAs($mm)->getJson('/api/taxonomy/events')->assertOk()->assertJsonPath('data.1.assets_count', 1);
         $this->actingAs($mm)->getJson('/api/lookups')->assertOk()->assertJsonCount(2, 'events')->assertJsonCount(1, 'cohorts');
     }

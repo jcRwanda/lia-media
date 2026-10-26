@@ -51,9 +51,24 @@ class R2ObjectStorageTest extends TestCase
 
     public function test_presigned_get_sets_disposition_and_ttl(): void
     {
+        $this->mock->append(new Result(['ContentLength' => 3, 'ContentType' => 'image/jpeg']));
+
         $url = $this->r2->presignGet('originals/a.jpg', 300, 'My "file".jpg', false);
         $this->assertStringContainsString('X-Amz-Expires=300', $url);
+        $this->assertStringContainsString('response-content-type=image%2Fjpeg', $url);
         $this->assertStringContainsString('response-content-disposition=attachment%3B%20filename%3D%22My%20file.jpg%22', $url);
+    }
+
+    public function test_presigned_get_without_a_stored_object_still_signs(): void
+    {
+        $this->mock->append(function (CommandInterface $cmd) {
+            return new S3Exception('Not Found', $cmd, ['code' => 'NotFound', 'response' => new Response(404)]);
+        });
+
+        $url = $this->r2->presignGet('originals/missing.jpg', 300);
+
+        $this->assertStringContainsString('X-Amz-Expires=300', $url);
+        $this->assertStringNotContainsString('response-content-type', $url);
     }
 
     public function test_multipart_lifecycle_and_list_parts_pagination(): void

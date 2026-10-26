@@ -24,7 +24,7 @@ final class Roles
         'assets.edit' => [self::MULTIMEDIA, self::COMMUNICATIONS],
         'assets.delete' => [],
         'assets.download_original' => [self::MULTIMEDIA, self::COMMUNICATIONS, self::MANAGEMENT],
-        'taxonomy.manage' => [self::MULTIMEDIA, self::COMMUNICATIONS],
+        'taxonomy.manage' => [],
         'albums.manage' => [self::MULTIMEDIA, self::COMMUNICATIONS],
         'shares.manage' => [self::MULTIMEDIA, self::COMMUNICATIONS],
         'review.approve' => [self::COMMUNICATIONS, self::MANAGEMENT],

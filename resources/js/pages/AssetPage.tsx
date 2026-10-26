@@ -69,7 +69,20 @@ export default function AssetPage() {
                 <div className="space-y-5">
                     <Card className="overflow-hidden">
                         <div className="grid min-h-64 place-items-center bg-neutral-900">
-                            {a.preview_url ? <img src={a.preview_url} alt={a.title} className="max-h-[70vh] w-auto object-contain" /> : <p className="p-10 text-sm text-neutral-400">No preview yet</p>}
+                            {a.kind === 'video' ? (
+                                <video
+                                    key={a.original_url || a.preview_url || a.uuid}
+                                    src={a.original_url || a.preview_url || undefined}
+                                    controls
+                                    playsInline
+                                    preload="metadata"
+                                    className="max-h-[70vh] w-full bg-black object-contain"
+                                />
+                            ) : a.preview_url ? (
+                                <img src={a.preview_url} alt={a.title} className="max-h-[70vh] w-auto object-contain" />
+                            ) : (
+                                <p className="p-10 text-sm text-neutral-400">No preview yet</p>
+                            )}
                         </div>
                         <div className="flex flex-wrap gap-x-4 gap-y-1 p-3 text-xs text-neutral-500">
                             <span>{a.original_filename}</span><span>{formatBytes(a.size_bytes)}</span>{a.width ? <span>{a.width}×{a.height}</span> : null}
