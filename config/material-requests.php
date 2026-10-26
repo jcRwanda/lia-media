@@ -52,6 +52,7 @@ return [
             'project_district',
             'project_sector',
             'project_cell',
+            'project_village',
         ],
         'extra_for_trainee_alumni' => [
             'cohort_id',
@@ -87,6 +88,7 @@ return [
         'project_district' => ['kn' => 'Akarere', 'en' => 'District'],
         'project_sector' => ['kn' => 'Umurenge', 'en' => 'Sector'],
         'project_cell' => ['kn' => 'Akagari', 'en' => 'Cell'],
+        'project_village' => ['kn' => 'Umudugudu', 'en' => 'Village'],
         'cohort_id' => ['kn' => 'Hitamo icyiciro', 'en' => 'Select Cohort'],
         'terms_accepted' => ['kn' => "Amasezerano y'ikoreshwa ry'ibikoresho no kwerekana uruhare rwa Love In Arts", 'en' => 'Terms & Credit agreement'],
         'consent_declaration' => ['kn' => 'Kwemera no kwitangaza', 'en' => 'Consent & Declaration'],

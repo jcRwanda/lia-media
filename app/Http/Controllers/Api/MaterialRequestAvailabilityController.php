@@ -16,7 +16,7 @@ class MaterialRequestAvailabilityController extends Controller
     public function index(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'item_ids' => ['required', 'array', 'min:1', 'max:100'],
+            'item_ids' => ['nullable', 'array', 'min:1', 'max:100'],
             'item_ids.*' => ['required', 'integer', Rule::exists('equipment_items', 'id')->whereNull('deleted_at')],
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date', 'after_or_equal:from'],
@@ -27,7 +27,7 @@ class MaterialRequestAvailabilityController extends Controller
             : CarbonImmutable::today();
         $to = isset($data['to'])
             ? CarbonImmutable::parse($data['to'])->startOfDay()
-            : $from->addDays(60);
+            : $from->addDays(90);
 
         if ((int) $from->diffInDays($to) > 366) {
             return response()->json([
@@ -36,7 +36,10 @@ class MaterialRequestAvailabilityController extends Controller
             ], 422);
         }
 
-        $itemIds = array_values(array_map('intval', $data['item_ids']));
+        $itemIds = [];
+        if (isset($data['item_ids'])) {
+            $itemIds = array_values(array_map('intval', $data['item_ids']));
+        }
 
         return response()->json($this->availability->availability($itemIds, $from, $to));
     }

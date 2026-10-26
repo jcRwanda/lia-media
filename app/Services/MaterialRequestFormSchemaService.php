@@ -60,7 +60,7 @@ class MaterialRequestFormSchemaService
             $this->field('district_res', 'select', false, 'residential_address', $labels, $this->divisionRule('district', 'province_res')),
             $this->field('sector_res', 'select', false, 'residential_address', $labels, $this->divisionRule('sector', 'district_res')),
             $this->field('cell_res', 'select', false, 'residential_address', $labels, $this->divisionRule('cell', 'sector_res')),
-            $this->field('village_res', 'text', false, 'residential_address', $labels, ['max_length' => 255]),
+            $this->field('village_res', 'select', false, 'residential_address', $labels, array_merge($this->divisionRule('village', 'cell_res'), ['allow_custom' => true])),
             $this->field('residential_address', 'text', false, 'residential_address', $labels, ['max_length' => 500]),
 
             $this->field('emergency_contact_name', 'text', true, 'emergency_contact', $labels, ['max_length' => 255]),
@@ -82,6 +82,7 @@ class MaterialRequestFormSchemaService
             $this->field('project_district', 'select', false, 'project_location', $labels, $this->divisionRule('district', 'project_province')),
             $this->field('project_sector', 'select', false, 'project_location', $labels, $this->divisionRule('sector', 'project_district')),
             $this->field('project_cell', 'select', false, 'project_location', $labels, $this->divisionRule('cell', 'project_sector')),
+            $this->field('project_village', 'select', false, 'project_location', $labels, array_merge($this->divisionRule('village', 'project_cell'), ['allow_custom' => true])),
             $this->field('project_location', 'text', false, 'project_location', $labels, ['max_length' => 500]),
 
             $this->field('cohort_id', 'select', $cohortRequired, 'programme', $labels, [

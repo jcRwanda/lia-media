@@ -74,6 +74,7 @@ class MaterialRequestPublicController extends Controller
         $data['return_by'] = $data['return_by'] ?? $data['end_date'] ?? null;
         $data['purpose_project_description'] = $data['purpose_project_description'] ?? $data['project_summary'] ?? null;
         $data['village_res'] = $data['village_res'] ?? $data['village'] ?? null;
+        $data['project_village'] = $data['project_village'] ?? $data['project_village_res'] ?? null;
         $data['cohort_id'] = $data['cohort_id'] ?? $data['cohort'] ?? null;
 
         $requesterType = $data['requester_type'] ?? 'client';
@@ -102,6 +103,7 @@ class MaterialRequestPublicController extends Controller
             'project_district' => ['nullable', 'string', 'max:255'],
             'project_sector' => ['nullable', 'string', 'max:255'],
             'project_cell' => ['nullable', 'string', 'max:255'],
+            'project_village' => ['nullable', 'string', 'max:255'],
             'project_location' => ['nullable', 'string', 'max:500'],
             'project_same_as_residential' => ['nullable', 'boolean'],
             'needed_from' => ['required', 'date'],
@@ -146,6 +148,7 @@ class MaterialRequestPublicController extends Controller
             $validated['project_district'] = $validated['district_res'] ?? null;
             $validated['project_sector'] = $validated['sector_res'] ?? null;
             $validated['project_cell'] = $validated['cell_res'] ?? null;
+            $validated['project_village'] = $validated['project_village'] ?? ($validated['village_res'] ?? null);
         }
 
         $validated['residential_address'] = $validated['residential_address']
@@ -158,6 +161,7 @@ class MaterialRequestPublicController extends Controller
             ]);
         $validated['project_location'] = $validated['project_location']
             ?? $this->composeAddress([
+                $validated['project_village'] ?? null,
                 $validated['project_cell'] ?? null,
                 $validated['project_sector'] ?? null,
                 $validated['project_district'] ?? null,

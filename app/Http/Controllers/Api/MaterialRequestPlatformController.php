@@ -170,7 +170,7 @@ class MaterialRequestPlatformController extends Controller
                         'summary' => 'Booked, blocked and unavailable dates per item',
                         'security' => [['liaKey' => []]],
                         'parameters' => [
-                            ['name' => 'item_ids', 'in' => 'query', 'required' => true, 'style' => 'form', 'explode' => true, 'schema' => ['type' => 'array', 'items' => ['type' => 'integer']]],
+                            ['name' => 'item_ids', 'in' => 'query', 'required' => false, 'style' => 'form', 'explode' => true, 'schema' => ['type' => 'array', 'items' => ['type' => 'integer']]],
                             ['name' => 'from', 'in' => 'query', 'required' => false, 'schema' => ['type' => 'string', 'format' => 'date']],
                             ['name' => 'to', 'in' => 'query', 'required' => false, 'schema' => ['type' => 'string', 'format' => 'date']],
                         ],

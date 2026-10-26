@@ -39,6 +39,7 @@ class MaterialRequest extends Model
         'project_district',
         'project_sector',
         'project_cell',
+        'project_village',
         'project_location',
         'needed_from',
         'return_by',

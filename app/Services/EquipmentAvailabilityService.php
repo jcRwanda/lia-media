@@ -36,10 +36,19 @@ class EquipmentAvailabilityService
         $from = $from->startOfDay();
         $to = $to->startOfDay();
         $rules = $this->rules();
-        $items = EquipmentItem::query()->whereIn('id', $itemIds)->orderBy('name')->get();
+
+        $itemsQuery = EquipmentItem::query()->orderBy('name');
+        if ($itemIds !== []) {
+            $itemsQuery->whereIn('id', $itemIds);
+        } else {
+            $itemsQuery->where(function ($query) {
+                $query->whereNull('deleted_at');
+            });
+        }
+        $items = $itemsQuery->get();
         $ids = $items->pluck('id')->all();
         $dates = $this->dates($from, $to);
-        $reserved = $this->reservedByItemAndDate($ids, $from, $to);
+        $reserved = $ids === [] ? [] : $this->reservedByItemAndDate($ids, $from, $to);
         $blocks = $this->blocksFor($ids, $from, $to);
 
         $globalReasons = [];

@@ -82,8 +82,8 @@ Returns requestable equipment with its total stock:
 
 ### `GET /availability?item_ids[]=12&item_ids[]=14&from=2026-11-01&to=2026-11-30`
 
-Returns reservations, blocks and per-day availability for the requested items. `from` defaults to today and `to`
-defaults to 60 days later; the range may not exceed 366 days.
+Returns reservations, blocks and per-day availability for the requested items. `item_ids` is optional; if omitted, availability is returned for all active items. `from` defaults to today and `to`
+defaults to 90 days later; the range may not exceed 366 days.
 
 ```bash
 curl -sG "https://media.loveinarts.com/api/v1/material-requests/availability" \
