@@ -9,7 +9,7 @@ Route::get('/request-materials', function () {
         $type = 'client';
     }
     $allowed = config('material-requests.allowed_origins', []);
-    $frameAncestors = "'self' ".implode(' ', array_map(fn ($o) => "'$o'", $allowed));
+    $frameAncestors = "'self' ".implode(' ', array_map('trim', $allowed));
     $response = response()->view('request-materials', [
         'type' => $type,
         'bilingualTerms' => config('material-requests.bilingual_terms'),
@@ -19,7 +19,6 @@ Route::get('/request-materials', function () {
         'requesterTypes' => config('material-requests.requester_types'),
     ]);
     $response->headers->set('Content-Security-Policy', 'frame-ancestors '.$frameAncestors);
-    $response->headers->set('X-Frame-Options', 'ALLOWALL');
 
     return $response;
 })->middleware('material.cors');
