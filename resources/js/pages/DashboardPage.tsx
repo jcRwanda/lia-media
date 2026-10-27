@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router';
+import { Link, Navigate } from 'react-router';
 import { useAuth } from '@/auth/AuthContext';
 import AssetTile from '@/components/media/AssetTile';
 import { Card, CardContent, CardHeader, CardTitle, PageHeader } from '@/components/ui/card';
@@ -21,6 +21,16 @@ export default function DashboardPage() {
     const { user, can } = useAuth();
     const q = useQuery({ queryKey: ['dashboard'], queryFn: () => api<Dash>('/dashboard'), enabled: can('dashboard.view') });
     const d = q.data;
+    if (user && !can('dashboard.view')) {
+        const home = [
+            ['material-requests.issue', '/storekeeper'],
+            ['material-requests.view', '/material-requests'],
+            ['equipment.manage', '/equipment-inventory'],
+            ['library.view', '/library'],
+            ['users.manage', '/admin/users'],
+        ].find(([a]) => can(a));
+        return <Navigate to={home ? home[1] : '/profile'} replace />;
+    }
     return (
         <>
             <PageHeader title={`Welcome, ${user?.name}`} description="Love In Arts media archive" />
