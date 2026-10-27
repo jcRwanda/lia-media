@@ -28,7 +28,7 @@ class RoleSeeder extends Seeder
                 'name' => 'Multimedia',
                 'is_system' => true,
                 'is_admin' => false,
-                'permissions' => ['library.view', 'assets.upload', 'assets.edit', 'albums.manage', 'shares.manage', 'dashboard.view'],
+                'permissions' => Roles::abilitiesFor(Roles::MULTIMEDIA),
             ]
         );
 
@@ -38,7 +38,7 @@ class RoleSeeder extends Seeder
                 'name' => 'Communications',
                 'is_system' => true,
                 'is_admin' => false,
-                'permissions' => ['library.view', 'assets.edit', 'assets.download_original', 'albums.manage', 'shares.manage', 'review.approve', 'review.publish', 'consent.manage', 'publications.manage', 'dashboard.view', 'material-requests.view', 'material-requests.manage', 'material-requests.issue', 'material-requests.return', 'equipment.manage'],
+                'permissions' => Roles::abilitiesFor(Roles::COMMUNICATIONS),
             ]
         );
 
@@ -48,7 +48,7 @@ class RoleSeeder extends Seeder
                 'name' => 'Management',
                 'is_system' => true,
                 'is_admin' => false,
-                'permissions' => ['library.view', 'assets.download_original', 'dashboard.view', 'audit.view', 'material-requests.view', 'material-requests.manage', 'material-requests.issue', 'material-requests.return', 'equipment.manage'],
+                'permissions' => Roles::abilitiesFor(Roles::MANAGEMENT),
             ]
         );
 
@@ -58,7 +58,7 @@ class RoleSeeder extends Seeder
                 'name' => 'Storekeeper',
                 'is_system' => true,
                 'is_admin' => false,
-                'permissions' => ['material-requests.view', 'material-requests.issue', 'material-requests.return', 'equipment.manage'],
+                'permissions' => Roles::abilitiesFor(Roles::STOREKEEPER),
             ]
         );
 
