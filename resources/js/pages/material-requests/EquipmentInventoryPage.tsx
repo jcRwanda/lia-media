@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { api, fieldErrors } from '@/lib/api';
+import { compressImages } from '@/lib/images';
+import { CategorySelect } from '@/components/CategorySelect';
 import { ProofUploader } from '@/components/ProofUploader';
 import { Badge, Card, CardContent, CardHeader, CardTitle, EmptyState, PageHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 interface EquipmentImage {
     id: number;
@@ -47,7 +49,14 @@ const emptyForm: EquipmentForm = {
     files: [],
 };
 
-function formToData(form: EquipmentForm): FormData {
+function describeError(e: unknown, fallback: string): string {
+    const errors = fieldErrors(e);
+    const lines = Object.values(errors).map((msg) => msg.replace(/\b(photos|images)\.(\d+)\b/g, (_, _f, n) => `photo ${Number(n) + 1}`));
+    if (lines.length) return lines.join('\n');
+    return e instanceof Error ? e.message : fallback;
+}
+
+async function formToData(form: EquipmentForm): Promise<FormData> {
     const data = new FormData();
     data.append('name', form.name);
     data.append('category', form.category);
@@ -56,7 +65,8 @@ function formToData(form: EquipmentForm): FormData {
     data.append('condition', form.condition);
     data.append('total_qty', form.total_qty || '0');
     data.append('allowed_for_trainees', form.allowed_for_trainees ? '1' : '0');
-    form.files.forEach((file, index) => data.append(`photos[${index}]`, file));
+    const files = await compressImages(form.files);
+    files.forEach((file, index) => data.append(`photos[${index}]`, file));
 
     return data;
 }
@@ -78,13 +88,13 @@ export default function EquipmentInventoryPage() {
     });
 
     const create = useMutation({
-        mutationFn: async () => api<{ item: EquipmentItem }>('/equipment-items', { method: 'POST', body: formToData(form) }),
+        mutationFn: async () => api<{ item: EquipmentItem }>('/equipment-items', { method: 'POST', body: await formToData(form) }),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['equipment-items'] });
             setForm(emptyForm);
             setError('');
         },
-        onError: (e) => setError(e instanceof Error ? e.message : 'Could not save item'),
+        onError: (e) => setError(describeError(e, 'Could not save item')),
     });
 
     const update = useMutation({
@@ -106,7 +116,7 @@ export default function EquipmentInventoryPage() {
     const saveEdit = useMutation({
         mutationFn: async () => {
             if (editingId === null) return;
-            const data = formToData(editForm);
+            const data = await formToData(editForm);
             data.append('_method', 'PATCH');
 
             return api<{ item: EquipmentItem }>(`/equipment-items/${editingId}`, { method: 'POST', body: data });
@@ -116,7 +126,7 @@ export default function EquipmentInventoryPage() {
             setEditingId(null);
             setError('');
         },
-        onError: (e) => setError(e instanceof Error ? e.message : 'Could not save item'),
+        onError: (e) => setError(describeError(e, 'Could not save item')),
     });
 
     const startEdit = (item: EquipmentItem) => {
@@ -133,6 +143,11 @@ export default function EquipmentInventoryPage() {
         });
     };
 
+    const categories = useMemo(
+        () => Array.from(new Set((data || []).map((it) => (it.category || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+        [data],
+    );
+
     const items = (data || []).filter((it) => (filterTrainee ? !!it.allowed_for_trainees : true));
 
     return (
@@ -142,7 +157,7 @@ export default function EquipmentInventoryPage() {
                 description="Add and edit equipment, quantities, condition, serial numbers, trainee eligibility and photos."
             />
 
-            {error ? <div className="rounded-lg border border-red-200 bg-red-50 p-2 text-sm text-red-700">{error}</div> : null}
+            {error ? <div className="whitespace-pre-line rounded-lg border border-red-200 bg-red-50 p-2 text-sm text-red-700">{error}</div> : null}
 
             <Card>
                 <CardHeader>
@@ -151,7 +166,7 @@ export default function EquipmentInventoryPage() {
                 <CardContent className="space-y-3">
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                         <Input placeholder="Name *" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-                        <Input placeholder="Category" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
+                        <CategorySelect value={form.category} options={categories} onChange={(category) => setForm({ ...form, category })} />
                         <Input placeholder="Serial number" value={form.serial_number} onChange={(e) => setForm({ ...form, serial_number: e.target.value })} />
                         <Input placeholder="Asset tag" value={form.asset_tag} onChange={(e) => setForm({ ...form, asset_tag: e.target.value })} />
                         <Input placeholder="Condition" value={form.condition} onChange={(e) => setForm({ ...form, condition: e.target.value })} />
@@ -203,7 +218,7 @@ export default function EquipmentInventoryPage() {
                                 <div className="space-y-3">
                                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                                         <Input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} placeholder="Name" />
-                                        <Input value={editForm.category} onChange={(e) => setEditForm({ ...editForm, category: e.target.value })} placeholder="Category" />
+                                        <CategorySelect value={editForm.category} options={categories} onChange={(category) => setEditForm({ ...editForm, category })} />
                                         <Input value={editForm.serial_number} onChange={(e) => setEditForm({ ...editForm, serial_number: e.target.value })} placeholder="Serial number" />
                                         <Input value={editForm.asset_tag} onChange={(e) => setEditForm({ ...editForm, asset_tag: e.target.value })} placeholder="Asset tag" />
                                         <Input value={editForm.condition} onChange={(e) => setEditForm({ ...editForm, condition: e.target.value })} placeholder="Condition" />

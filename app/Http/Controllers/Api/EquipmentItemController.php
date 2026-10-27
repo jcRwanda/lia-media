@@ -5,12 +5,18 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\EquipmentItem;
 use App\Services\MaterialRequestService;
+use App\Support\ImageNormalizer;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
 class EquipmentItemController extends Controller
 {
+    private const IMAGE_MIMES = 'jpg,jpeg,png,webp,heic,heif';
+
+    private const MAX_KB = 20480;
+
     public function __construct(private MaterialRequestService $files) {}
 
     public function index(Request $request): JsonResponse
@@ -38,11 +44,11 @@ class EquipmentItemController extends Controller
             'condition' => ['nullable', 'string', 'max:255'],
             'total_qty' => ['required', 'integer', 'min:0'],
             'allowed_for_trainees' => ['nullable', 'boolean'],
-            'photo' => ['nullable', 'image', 'max:5120'],
+            'photo' => ['nullable', 'file', 'mimes:'.self::IMAGE_MIMES, 'max:'.self::MAX_KB],
             'photos' => ['nullable', 'array'],
-            'photos.*' => ['image', 'max:10240'],
+            'photos.*' => ['nullable', 'file', 'mimes:'.self::IMAGE_MIMES, 'max:'.self::MAX_KB],
             'images' => ['nullable', 'array'],
-            'images.*' => ['image', 'max:10240'],
+            'images.*' => ['nullable', 'file', 'mimes:'.self::IMAGE_MIMES, 'max:'.self::MAX_KB],
         ]);
 
         if ($validator->fails()) {
@@ -53,8 +59,7 @@ class EquipmentItemController extends Controller
         unset($data['photo'], $data['photos'], $data['images']);
 
         if ($request->hasFile('photo')) {
-            $path = $request->file('photo')->store('material-requests/equipment', 'public');
-            $data['photo_path'] = $path;
+            $data['photo_path'] = $this->storeFile($request->file('photo'))['path'];
         }
 
         $item = EquipmentItem::query()->create($data);
@@ -87,11 +92,11 @@ class EquipmentItemController extends Controller
             'condition' => ['nullable', 'string', 'max:255'],
             'total_qty' => ['sometimes', 'integer', 'min:0'],
             'allowed_for_trainees' => ['nullable', 'boolean'],
-            'photo' => ['nullable', 'image', 'max:5120'],
+            'photo' => ['nullable', 'file', 'mimes:'.self::IMAGE_MIMES, 'max:'.self::MAX_KB],
             'photos' => ['nullable', 'array'],
-            'photos.*' => ['image', 'max:10240'],
+            'photos.*' => ['nullable', 'file', 'mimes:'.self::IMAGE_MIMES, 'max:'.self::MAX_KB],
             'images' => ['nullable', 'array'],
-            'images.*' => ['image', 'max:10240'],
+            'images.*' => ['nullable', 'file', 'mimes:'.self::IMAGE_MIMES, 'max:'.self::MAX_KB],
         ]);
 
         if ($validator->fails()) {
@@ -102,8 +107,7 @@ class EquipmentItemController extends Controller
         unset($data['photo'], $data['photos'], $data['images']);
 
         if ($request->hasFile('photo')) {
-            $path = $request->file('photo')->store('material-requests/equipment', 'public');
-            $data['photo_path'] = $path;
+            $data['photo_path'] = $this->storeFile($request->file('photo'))['path'];
         }
 
         $equipmentItem->update($data);
@@ -136,17 +140,24 @@ class EquipmentItemController extends Controller
             if (! $file || ! $file->isValid()) {
                 continue;
             }
-            $path = $file->store('material-requests/equipment', 'public');
+            $stored = $this->storeFile($file);
+            $path = $stored['path'];
             $item->images()->create([
                 'path' => $path,
-                'name' => $file->getClientOriginalName(),
-                'mime' => $file->getMimeType(),
+                'name' => $stored['name'],
+                'mime' => $stored['mime'],
                 'sort_order' => $item->images()->count() + $idx,
             ]);
             if (! $item->photo_path) {
                 $item->update(['photo_path' => $path]);
             }
         }
+    }
+
+    /** @return array{path: string, name: string, mime: string} */
+    private function storeFile(UploadedFile $file): array
+    {
+        return ImageNormalizer::store($file, 'material-requests/equipment', 'public');
     }
 
     public function destroy(Request $request, EquipmentItem $equipmentItem): JsonResponse

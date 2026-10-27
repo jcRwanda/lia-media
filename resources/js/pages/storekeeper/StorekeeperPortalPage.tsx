@@ -1,3 +1,4 @@
+import { compressImages } from '@/lib/images';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { api, fieldErrors } from '@/lib/api';
@@ -101,9 +102,9 @@ export default function StorekeeperPortalPage() {
             if (!action) return;
             const formData = new FormData();
             const items = action.booking.items.filter((item) => forms[item.id]);
-            items.forEach((item, index) => {
+            for (const [index, item] of items.entries()) {
                 const form = forms[item.id];
-                if (!form || Number(form.qty) <= 0) return;
+                if (!form || Number(form.qty) <= 0) continue;
                 formData.append(`items[${index}][id]`, String(item.id));
                 if (action.type === 'issue') {
                     formData.append(`items[${index}][qty_issued]`, form.qty);
@@ -113,10 +114,10 @@ export default function StorekeeperPortalPage() {
                     formData.append(`items[${index}][return_condition]`, form.condition);
                 }
                 if (form.notes.trim()) formData.append(`items[${index}][note]`, form.notes.trim());
-                form.files.forEach((file, fileIndex) => {
+                (await compressImages(form.files)).forEach((file, fileIndex) => {
                     formData.append(`items[${index}][${action.type === 'issue' ? 'issue_proofs' : 'return_proofs'}][${fileIndex}]`, file);
                 });
-            });
+            }
             return api(`/material-requests/${action.booking.id}/${action.type}`, { method: 'POST', body: formData });
         },
         onSuccess: () => {
