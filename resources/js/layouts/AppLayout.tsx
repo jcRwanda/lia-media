@@ -1,19 +1,29 @@
-import { Archive, BarChart3, CalendarDays, ClipboardList, FolderOpen, FolderTree, Images, LayoutDashboard, LogOut, Menu, ScrollText, Settings, Share2, ShieldCheck, Upload, Users, X } from 'lucide-react';
+import { Archive, BarChart3, CalendarDays, ClipboardCheck, ClipboardList, FolderOpen, FolderTree, Images, LayoutDashboard, LogOut, Menu, ScrollText, Settings, Share2, ShieldCheck, Upload, Users, X } from 'lucide-react';
 import { useState } from 'react';
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router';
 import { useAuth } from '@/auth/AuthContext';
 import { cn } from '@/lib/utils';
 
-const nav = [
+interface NavItem {
+    to: string;
+    label: string;
+    icon: typeof LayoutDashboard;
+    ability: string;
+    section?: string;
+    end?: boolean;
+}
+
+const nav: NavItem[] = [
     { to: '/', label: 'Dashboard', icon: LayoutDashboard, ability: 'dashboard.view', end: true },
     { to: '/library', label: 'Library', icon: Images, ability: 'library.view' },
     { to: '/upload', label: 'Upload', icon: Upload, ability: 'assets.upload' },
     { to: '/albums', label: 'Albums', icon: Archive, ability: 'library.view' },
     { to: '/review', label: 'Review', icon: ShieldCheck, ability: 'review.approve' },
     { to: '/shares', label: 'Share links', icon: Share2, ability: 'shares.manage' },
-    { to: '/material-requests', label: 'Material Requests', icon: ClipboardList, ability: 'material-requests.view' },
-    { to: '/equipment-inventory', label: 'Inventory', icon: FolderOpen, ability: 'equipment.manage' },
-    { to: '/equipment-calendar', label: 'Equipment calendar', icon: CalendarDays, ability: 'material-requests.view' },
+    { to: '/storekeeper', section: 'Storekeeper', label: 'Portal', icon: ClipboardCheck, ability: 'material-requests.issue' },
+    { to: '/material-requests', section: 'Storekeeper', label: 'Material Requests', icon: ClipboardList, ability: 'material-requests.view' },
+    { to: '/equipment-inventory', section: 'Storekeeper', label: 'Inventory', icon: FolderOpen, ability: 'equipment.manage' },
+    { to: '/equipment-calendar', section: 'Storekeeper', label: 'Equipment calendar', icon: CalendarDays, ability: 'material-requests.view' },
     { to: '/taxonomy', label: 'Projects & events', icon: FolderTree, ability: 'library.view' },
     { to: '/storage', label: 'Storage', icon: BarChart3, ability: 'dashboard.view' },
     { to: '/admin/users', label: 'Users', icon: Users, ability: 'users.manage' },
@@ -30,14 +40,26 @@ export default function AppLayout() {
     // A temporary password locks every route: park the user on the set-password screen first.
     if (user.must_change_password) return <Navigate to={`/set-password?next=${encodeURIComponent(loc.pathname + loc.search)}`} replace />;
     const items = nav.filter((n) => can(n.ability));
+    const groups = items.reduce<Record<string, typeof items>>((acc, item) => {
+        const key = item.section ?? 'Main';
+        acc[key] = [...(acc[key] ?? []), item];
+        return acc;
+    }, {});
     const links = (
-        <nav className="space-y-0.5">
-            {items.map((n) => (
-                <NavLink key={n.to} to={n.to} end={n.end} onClick={() => setOpen(false)}
-                    className={({ isActive }) => cn('flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm', isActive ? 'bg-lia-50 font-medium text-lia-700' : 'text-neutral-600 hover:bg-neutral-100')}>
-                    <n.icon className="h-4 w-4" />
-                    {n.label}
-                </NavLink>
+        <nav className="space-y-4">
+            {Object.entries(groups).map(([section, sectionItems]) => (
+                <div key={section} className="space-y-0.5">
+                    {section !== 'Main' ? (
+                        <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">{section}</div>
+                    ) : null}
+                    {sectionItems.map((n) => (
+                        <NavLink key={n.to} to={n.to} end={n.end} onClick={() => setOpen(false)}
+                            className={({ isActive }) => cn('flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm', isActive ? 'bg-lia-50 font-medium text-lia-700' : 'text-neutral-600 hover:bg-neutral-100')}>
+                            <n.icon className="h-4 w-4" />
+                            {n.label}
+                        </NavLink>
+                    ))}
+                </div>
             ))}
         </nav>
     );

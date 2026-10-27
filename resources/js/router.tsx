@@ -20,6 +20,7 @@ import MaterialRequestsPage from '@/pages/material-requests/MaterialRequestsPage
 import MaterialRequestDetailPage from '@/pages/material-requests/MaterialRequestDetailPage';
 import EquipmentInventoryPage from '@/pages/material-requests/EquipmentInventoryPage';
 import EquipmentCalendarPage from '@/pages/material-requests/EquipmentCalendarPage';
+import StorekeeperPortalPage from '@/pages/storekeeper/StorekeeperPortalPage';
 
 const guard = (ability: string, el: React.ReactNode) => <RequireAbility ability={ability}>{el}</RequireAbility>;
 
@@ -43,6 +44,7 @@ export const routes = [
             { path: '/upload', element: guard('assets.upload', <UploadPage />) },
             { path: '/admin/users', element: guard('users.manage', <UsersPage />) },
             { path: '/admin/audit', element: guard('audit.view', <AuditPage />) },
+            { path: '/storekeeper', element: guard('material-requests.issue', <StorekeeperPortalPage />) },
             { path: '/material-requests', element: guard('material-requests.view', <MaterialRequestsPage />) },
             { path: '/material-requests/:id', element: guard('material-requests.view', <MaterialRequestDetailPage />) },
             { path: '/equipment-inventory', element: guard('equipment.manage', <EquipmentInventoryPage />) },

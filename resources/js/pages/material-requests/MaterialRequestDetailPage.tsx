@@ -1,7 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router';
 import { api } from '@/lib/api';
+import { buildMaterialRequestWhatsappLink, formatDate } from '@/lib/utils';
+import { ProofUploader } from '@/components/ProofUploader';
 import { useState } from 'react';
+import { MessageCircle } from 'lucide-react';
+
+const EMPTY_FILES: File[] = [];
 
 export default function MaterialRequestDetailPage() {
     const { id } = useParams();
@@ -42,7 +47,10 @@ export default function MaterialRequestDetailPage() {
                 formData.append(`items[${idx}][id]`, it.id);
                 formData.append(`items[${idx}][qty_issued]`, it.qty_issued);
                 formData.append(`items[${idx}][issue_condition]`, it.issue_condition || '');
-                if (it.issue_proof) formData.append(`items[${idx}][issue_proof]`, it.issue_proof);
+                if (it.notes) formData.append(`items[${idx}][note]`, it.notes);
+                (it.issue_proofs || []).forEach((file: File, fileIdx: number) => {
+                    formData.append(`items[${idx}][issue_proofs][${fileIdx}]`, file);
+                });
             });
             const res = await fetch(`/api/material-requests/${id}/issue`, { method: 'POST', body: formData, credentials: 'same-origin' });
             return res.json();
@@ -57,7 +65,10 @@ export default function MaterialRequestDetailPage() {
                 formData.append(`items[${idx}][id]`, it.id);
                 formData.append(`items[${idx}][qty_returned]`, it.qty_returned);
                 formData.append(`items[${idx}][return_condition]`, it.return_condition || '');
-                if (it.return_proof) formData.append(`items[${idx}][return_proof]`, it.return_proof);
+                if (it.notes) formData.append(`items[${idx}][note]`, it.notes);
+                (it.return_proofs || []).forEach((file: File, fileIdx: number) => {
+                    formData.append(`items[${idx}][return_proofs][${fileIdx}]`, file);
+                });
             });
             const res = await fetch(`/api/material-requests/${id}/return`, { method: 'POST', body: formData, credentials: 'same-origin' });
             return res.json();
@@ -90,6 +101,16 @@ export default function MaterialRequestDetailPage() {
                 <div className="flex flex-wrap items-center gap-2 text-sm">
                     <span className="px-2 py-1 rounded bg-lia-50 text-lia-700">{data.source_label || data.source || 'Direct/Hosted form'}</span>
                     <span className="px-2 py-1 rounded bg-neutral-100 capitalize">{data.status} {data.is_overdue ? '(overdue)' : ''}</span>
+                    {['approved', 'issued', 'returned', 'closed'].includes(data.status) ? (
+                        (() => {
+                            const url = data.whatsapp_url || buildMaterialRequestWhatsappLink(data);
+                            return url ? (
+                                <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded bg-emerald-600 px-3 py-1 text-white">
+                                    <MessageCircle className="h-4 w-4" /> Send on WhatsApp
+                                </a>
+                            ) : null;
+                        })()
+                    ) : null}
                 </div>
             </div>
 
@@ -145,16 +166,31 @@ export default function MaterialRequestDetailPage() {
                             <th className="text-left p-2">Approved</th>
                             <th className="text-left p-2">Issued</th>
                             <th className="text-left p-2">Returned</th>
+                            <th className="text-left p-2">Proofs</th>
                         </tr>
                     </thead>
                     <tbody>
                         {(data.items||[]).map((it: any) => (
                             <tr key={it.id} className="border-t">
-                                <td className="p-2">{it.equipment_item?.name}</td>
+                                <td className="p-2">
+                                    <div>{it.equipment_item?.name}</div>
+                                    {it.issued_at ? <div className="text-[11px] text-neutral-500">Handed out {formatDate(it.issued_at)}{it.issued_by ? ` by ${it.issued_by}` : ''}</div> : null}
+                                    {it.returned_at ? <div className="text-[11px] text-neutral-500">Checked in {formatDate(it.returned_at)}{it.received_by ? ` by ${it.received_by}` : ''}</div> : null}
+                                </td>
                                 <td className="p-2">{it.qty_requested}</td>
                                 <td className="p-2">{it.qty_approved}</td>
                                 <td className="p-2">{it.qty_issued}</td>
                                 <td className="p-2">{it.qty_returned}</td>
+                                <td className="p-2">
+                                    <div className="flex flex-wrap gap-1">
+                                        {[...(it.issue_proof_urls || []), ...(it.return_proof_urls || [])].map((url: string) => (
+                                            <a key={url} href={url} target="_blank" rel="noreferrer">
+                                                <img src={url} alt="Proof" className="h-10 w-10 rounded border object-cover" />
+                                            </a>
+                                        ))}
+                                        {(!it.issue_proof_urls?.length && !it.return_proof_urls?.length) ? <span className="text-xs text-neutral-400">—</span> : null}
+                                    </div>
+                                </td>
                             </tr>
                         ))}
                     </tbody>
@@ -180,7 +216,13 @@ export default function MaterialRequestDetailPage() {
                             <div className="text-sm">{it.equipment_item?.name}</div>
                             <input type="number" placeholder="Qty issued" className="border rounded p-1 text-sm" onChange={(e)=>setIssueItems(prev=>{const n=[...prev]; n[idx]={...n[idx], id:it.id, qty_issued:e.target.value}; return n;})} />
                             <input type="text" placeholder="Condition" className="border rounded p-1 text-sm" onChange={(e)=>setIssueItems(prev=>{const n=[...prev]; n[idx]={...n[idx], id:it.id, issue_condition:e.target.value}; return n;})} />
-                            <input type="file" accept="image/*" capture="environment" className="text-sm" onChange={(e)=>setIssueItems(prev=>{const n=[...prev]; n[idx]={...n[idx], id:it.id, issue_proof:e.target.files?.[0]}; return n;})} required />
+                            <div className="sm:col-span-2">
+                                <ProofUploader
+                                    label="Hand-out photo proof"
+                                    files={issueItems[idx]?.issue_proofs || EMPTY_FILES}
+                                    onChange={(files)=>setIssueItems(prev=>{const n=[...prev]; n[idx]={...n[idx], id:it.id, issue_proofs:files}; return n;})}
+                                />
+                            </div>
                         </div>
                     ))}
                     <button onClick={()=>issue.mutate()} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">Issue</button>
@@ -195,7 +237,13 @@ export default function MaterialRequestDetailPage() {
                             <div className="text-sm">{it.equipment_item?.name}</div>
                             <input type="number" placeholder="Qty returned" className="border rounded p-1 text-sm" onChange={(e)=>setReturnItems(prev=>{const n=[...prev]; n[idx]={...n[idx], id:it.id, qty_returned:e.target.value}; return n;})} />
                             <input type="text" placeholder="Condition" className="border rounded p-1 text-sm" onChange={(e)=>setReturnItems(prev=>{const n=[...prev]; n[idx]={...n[idx], id:it.id, return_condition:e.target.value}; return n;})} />
-                            <input type="file" accept="image/*" capture="environment" className="text-sm" onChange={(e)=>setReturnItems(prev=>{const n=[...prev]; n[idx]={...n[idx], id:it.id, return_proof:e.target.files?.[0]}; return n;})} required />
+                            <div className="sm:col-span-2">
+                                <ProofUploader
+                                    label="Check-in photo proof"
+                                    files={returnItems[idx]?.return_proofs || EMPTY_FILES}
+                                    onChange={(files)=>setReturnItems(prev=>{const n=[...prev]; n[idx]={...n[idx], id:it.id, return_proofs:files}; return n;})}
+                                />
+                            </div>
                         </div>
                     ))}
                     <button onClick={()=>ret.mutate()} className="px-3 py-1 bg-amber-600 text-white rounded text-sm">Record Return</button>

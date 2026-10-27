@@ -1,120 +1,272 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { ProofUploader } from '@/components/ProofUploader';
+import { Badge, Card, CardContent, CardHeader, CardTitle, EmptyState, PageHeader } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { useState } from 'react';
+
+interface EquipmentImage {
+    id: number;
+    name: string | null;
+    url: string | null;
+}
+
+interface EquipmentItem {
+    id: number;
+    name: string;
+    category: string | null;
+    serial_number: string | null;
+    asset_tag: string | null;
+    condition: string | null;
+    total_qty: number;
+    allowed_for_trainees: boolean;
+    photo_url: string | null;
+    images: EquipmentImage[];
+}
+
+interface EquipmentForm {
+    name: string;
+    category: string;
+    serial_number: string;
+    asset_tag: string;
+    condition: string;
+    total_qty: string;
+    allowed_for_trainees: boolean;
+    files: File[];
+}
+
+const emptyForm: EquipmentForm = {
+    name: '',
+    category: '',
+    serial_number: '',
+    asset_tag: '',
+    condition: '',
+    total_qty: '0',
+    allowed_for_trainees: false,
+    files: [],
+};
+
+function formToData(form: EquipmentForm): FormData {
+    const data = new FormData();
+    data.append('name', form.name);
+    data.append('category', form.category);
+    data.append('serial_number', form.serial_number);
+    data.append('asset_tag', form.asset_tag);
+    data.append('condition', form.condition);
+    data.append('total_qty', form.total_qty || '0');
+    data.append('allowed_for_trainees', form.allowed_for_trainees ? '1' : '0');
+    form.files.forEach((file, index) => data.append(`photos[${index}]`, file));
+
+    return data;
+}
 
 export default function EquipmentInventoryPage() {
     const qc = useQueryClient();
+    const [form, setForm] = useState<EquipmentForm>(emptyForm);
+    const [editingId, setEditingId] = useState<number | null>(null);
+    const [editForm, setEditForm] = useState<EquipmentForm>(emptyForm);
+    const [filterTrainee, setFilterTrainee] = useState(false);
+    const [error, setError] = useState('');
+
     const { data, isLoading } = useQuery({
         queryKey: ['equipment-items'],
         queryFn: async () => {
-            const res = await api<any>('/equipment-items');
+            const res = await api<{ items: EquipmentItem[] }>('/equipment-items');
             return res.items || [];
         },
     });
 
-    const [form, setForm] = useState({ name: '', category: '', serial_number: '', asset_tag: '', condition: '', total_qty: 0, allowed_for_trainees: false });
-    const [filterTrainee, setFilterTrainee] = useState(false);
-
     const create = useMutation({
-        mutationFn: async () => {
-            const formData = new FormData();
-            formData.append('name', form.name);
-            formData.append('category', form.category);
-            formData.append('serial_number', form.serial_number);
-            formData.append('asset_tag', form.asset_tag);
-            formData.append('condition', form.condition);
-            formData.append('total_qty', String(form.total_qty));
-            formData.append('allowed_for_trainees', form.allowed_for_trainees ? '1' : '0');
-            const res = await fetch('/api/equipment-items', { method: 'POST', body: formData, credentials: 'same-origin' });
-            return res.json();
-        },
+        mutationFn: async () => api<{ item: EquipmentItem }>('/equipment-items', { method: 'POST', body: formToData(form) }),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['equipment-items'] });
-            setForm({ name: '', category: '', serial_number: '', asset_tag: '', condition: '', total_qty: 0, allowed_for_trainees: false });
+            setForm(emptyForm);
+            setError('');
         },
+        onError: (e) => setError(e instanceof Error ? e.message : 'Could not save item'),
     });
 
     const update = useMutation({
-        mutationFn: async ({ id, payload }: { id: number; payload: any }) => {
-            const formData = new FormData();
-            Object.entries(payload).forEach(([k, v]) => {
-                if (typeof v === 'boolean') {
-                    formData.append(k, v ? '1' : '0');
-                } else if (v !== undefined && v !== null) {
-                    formData.append(k, String(v));
-                }
+        mutationFn: async ({ id, payload }: { id: number; payload: Partial<EquipmentItem> }) => {
+            const data = new FormData();
+            data.append('_method', 'PATCH');
+            Object.entries(payload).forEach(([key, value]) => {
+                if (typeof value === 'boolean') data.append(key, value ? '1' : '0');
+                else if (value !== undefined && value !== null) data.append(key, String(value));
             });
-            const res = await fetch(`/api/equipment-items/${id}`, { method: 'POST', body: formData, credentials: 'same-origin' });
-            return res.json();
+
+            return api<{ item: EquipmentItem }>(`/equipment-items/${id}`, { method: 'POST', body: data });
         },
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['equipment-items'] });
         },
     });
 
-    const items = (data || []).filter((it: any) => (filterTrainee ? !!it.allowed_for_trainees : true));
+    const saveEdit = useMutation({
+        mutationFn: async () => {
+            if (editingId === null) return;
+            const data = formToData(editForm);
+            data.append('_method', 'PATCH');
+
+            return api<{ item: EquipmentItem }>(`/equipment-items/${editingId}`, { method: 'POST', body: data });
+        },
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['equipment-items'] });
+            setEditingId(null);
+            setError('');
+        },
+        onError: (e) => setError(e instanceof Error ? e.message : 'Could not save item'),
+    });
+
+    const startEdit = (item: EquipmentItem) => {
+        setEditingId(item.id);
+        setEditForm({
+            name: item.name,
+            category: item.category || '',
+            serial_number: item.serial_number || '',
+            asset_tag: item.asset_tag || '',
+            condition: item.condition || '',
+            total_qty: String(item.total_qty),
+            allowed_for_trainees: !!item.allowed_for_trainees,
+            files: [],
+        });
+    };
+
+    const items = (data || []).filter((it) => (filterTrainee ? !!it.allowed_for_trainees : true));
 
     return (
-        <div className="p-4 space-y-4">
-            <h1 className="text-xl font-semibold">Equipment Inventory</h1>
+        <div className="space-y-4">
+            <PageHeader
+                title="Equipment inventory"
+                description="Add and edit equipment, quantities, condition, serial numbers, trainee eligibility and photos."
+            />
 
-            <div className="border rounded p-3 space-y-2">
-                <div className="font-medium">Add Item</div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <input placeholder="Name" value={form.name} onChange={(e)=>setForm({...form,name:e.target.value})} className="border rounded p-1 text-sm" />
-                    <input placeholder="Category" value={form.category} onChange={(e)=>setForm({...form,category:e.target.value})} className="border rounded p-1 text-sm" />
-                    <input placeholder="Serial" value={form.serial_number} onChange={(e)=>setForm({...form,serial_number:e.target.value})} className="border rounded p-1 text-sm" />
-                    <input placeholder="Asset tag" value={form.asset_tag} onChange={(e)=>setForm({...form,asset_tag:e.target.value})} className="border rounded p-1 text-sm" />
-                    <input placeholder="Condition" value={form.condition} onChange={(e)=>setForm({...form,condition:e.target.value})} className="border rounded p-1 text-sm" />
-                    <input type="number" placeholder="Total qty" value={form.total_qty} onChange={(e)=>setForm({...form,total_qty:parseInt(e.target.value)||0})} className="border rounded p-1 text-sm" />
-                </div>
-                <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={form.allowed_for_trainees} onChange={(e)=>setForm({...form,allowed_for_trainees:e.target.checked})} />
-                    Allowed for trainees
-                </label>
-                <button onClick={()=>create.mutate()} className="px-3 py-1 bg-black text-white rounded text-sm">Add</button>
-            </div>
+            {error ? <div className="rounded-lg border border-red-200 bg-red-50 p-2 text-sm text-red-700">{error}</div> : null}
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>Add item</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        <Input placeholder="Name *" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+                        <Input placeholder="Category" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
+                        <Input placeholder="Serial number" value={form.serial_number} onChange={(e) => setForm({ ...form, serial_number: e.target.value })} />
+                        <Input placeholder="Asset tag" value={form.asset_tag} onChange={(e) => setForm({ ...form, asset_tag: e.target.value })} />
+                        <Input placeholder="Condition" value={form.condition} onChange={(e) => setForm({ ...form, condition: e.target.value })} />
+                        <Input type="number" min={0} placeholder="Quantity" value={form.total_qty} onChange={(e) => setForm({ ...form, total_qty: e.target.value })} />
+                    </div>
+                    <label className="flex items-center gap-2 text-sm">
+                        <input type="checkbox" checked={form.allowed_for_trainees} onChange={(e) => setForm({ ...form, allowed_for_trainees: e.target.checked })} />
+                        Allowed for trainees
+                    </label>
+                    <ProofUploader
+                        label="Equipment images"
+                        required={false}
+                        helpText="Add as many photos as you need. Camera capture works on mobile."
+                        files={form.files}
+                        onChange={(files) => setForm({ ...form, files })}
+                    />
+                    <Button disabled={!form.name.trim() || create.isPending} onClick={() => create.mutate()}>
+                        {create.isPending ? 'Saving…' : 'Add item'}
+                    </Button>
+                </CardContent>
+            </Card>
 
             <div className="flex items-center gap-2 text-sm">
                 <label className="flex items-center gap-2">
-                    <input type="checkbox" checked={filterTrainee} onChange={(e)=>setFilterTrainee(e.target.checked)} />
+                    <input type="checkbox" checked={filterTrainee} onChange={(e) => setFilterTrainee(e.target.checked)} />
                     Filter: allowed for trainees only
                 </label>
             </div>
 
-            <div className="overflow-x-auto border rounded">
-                <table className="w-full text-sm">
-                    <thead className="bg-neutral-50">
-                        <tr>
-                            <th className="text-left p-2">Name</th>
-                            <th className="text-left p-2">Category</th>
-                            <th className="text-left p-2">Serial</th>
-                            <th className="text-left p-2">Asset Tag</th>
-                            <th className="text-left p-2">Condition</th>
-                            <th className="text-left p-2">Total Qty</th>
-                            <th className="text-left p-2">Allowed for trainees</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {isLoading ? (
-                            <tr><td className="p-2" colSpan={7}>Loading...</td></tr>
-                        ) : items.length === 0 ? (
-                            <tr><td className="p-2" colSpan={7}>No items</td></tr>
-                        ) : items.map((it: any) => (
-                            <tr key={it.id} className="border-t">
-                                <td className="p-2">{it.name}</td>
-                                <td className="p-2">{it.category}</td>
-                                <td className="p-2">{it.serial_number}</td>
-                                <td className="p-2">{it.asset_tag}</td>
-                                <td className="p-2">{it.condition}</td>
-                                <td className="p-2">{it.total_qty}</td>
-                                <td className="p-2">
-                                    <input type="checkbox" checked={!!it.allowed_for_trainees} onChange={(e)=>update.mutate({ id: it.id, payload: { allowed_for_trainees: e.target.checked } })} />
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
+            {isLoading ? <p className="text-sm text-neutral-500">Loading…</p> : null}
+            {!isLoading && items.length === 0 ? <EmptyState title="No equipment items yet" /> : null}
+
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                {items.map((item) => (
+                    <Card key={item.id}>
+                        <CardHeader className="flex-row items-start justify-between gap-2">
+                            <div>
+                                <CardTitle>{item.name}</CardTitle>
+                                <p className="text-xs text-neutral-500">
+                                    {[item.category, item.serial_number ? `SN ${item.serial_number}` : null, item.asset_tag ? `Tag ${item.asset_tag}` : null]
+                                        .filter(Boolean)
+                                        .join(' · ') || 'No category or identifiers'}
+                                </p>
+                            </div>
+                            <Badge tone={item.allowed_for_trainees ? 'green' : 'neutral'}>{item.allowed_for_trainees ? 'Trainee allowed' : 'Staff only'}</Badge>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            {editingId === item.id ? (
+                                <div className="space-y-3">
+                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                        <Input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} placeholder="Name" />
+                                        <Input value={editForm.category} onChange={(e) => setEditForm({ ...editForm, category: e.target.value })} placeholder="Category" />
+                                        <Input value={editForm.serial_number} onChange={(e) => setEditForm({ ...editForm, serial_number: e.target.value })} placeholder="Serial number" />
+                                        <Input value={editForm.asset_tag} onChange={(e) => setEditForm({ ...editForm, asset_tag: e.target.value })} placeholder="Asset tag" />
+                                        <Input value={editForm.condition} onChange={(e) => setEditForm({ ...editForm, condition: e.target.value })} placeholder="Condition" />
+                                        <Input type="number" min={0} value={editForm.total_qty} onChange={(e) => setEditForm({ ...editForm, total_qty: e.target.value })} placeholder="Quantity" />
+                                    </div>
+                                    <label className="flex items-center gap-2 text-sm">
+                                        <input
+                                            type="checkbox"
+                                            checked={editForm.allowed_for_trainees}
+                                            onChange={(e) => setEditForm({ ...editForm, allowed_for_trainees: e.target.checked })}
+                                        />
+                                        Allowed for trainees
+                                    </label>
+                                    <ProofUploader
+                                        label="Add equipment images"
+                                        required={false}
+                                        files={editForm.files}
+                                        onChange={(files) => setEditForm({ ...editForm, files })}
+                                    />
+                                    <div className="flex gap-2">
+                                        <Button size="sm" disabled={saveEdit.isPending} onClick={() => saveEdit.mutate()}>
+                                            {saveEdit.isPending ? 'Saving…' : 'Save changes'}
+                                        </Button>
+                                        <Button size="sm" variant="secondary" onClick={() => setEditingId(null)}>
+                                            Cancel
+                                        </Button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                                        <span className="rounded bg-neutral-100 px-2 py-1 text-xs">{item.total_qty} in stock</span>
+                                        <span className="text-xs text-neutral-500">Condition: {item.condition || '—'}</span>
+                                        <label className="ml-auto flex items-center gap-1 text-xs">
+                                            <input
+                                                type="checkbox"
+                                                checked={!!item.allowed_for_trainees}
+                                                onChange={(e) => update.mutate({ id: item.id, payload: { allowed_for_trainees: e.target.checked } })}
+                                            />
+                                            Trainees
+                                        </label>
+                                    </div>
+                                    {item.images.length > 0 ? (
+                                        <div className="flex flex-wrap gap-2">
+                                            {item.images.map((image) => (
+                                                <a key={image.id} href={image.url || '#'} target="_blank" rel="noreferrer">
+                                                    <img src={image.url || ''} alt={image.name || item.name} className="h-16 w-16 rounded-lg border object-cover" />
+                                                </a>
+                                            ))}
+                                        </div>
+                                    ) : item.photo_url ? (
+                                        <img src={item.photo_url} alt={item.name} className="h-16 w-16 rounded-lg border object-cover" />
+                                    ) : (
+                                        <p className="text-xs text-neutral-400">No photos yet.</p>
+                                    )}
+                                    <Button size="sm" variant="secondary" onClick={() => startEdit(item)}>
+                                        Edit item
+                                    </Button>
+                                </>
+                            )}
+                        </CardContent>
+                    </Card>
+                ))}
             </div>
         </div>
     );

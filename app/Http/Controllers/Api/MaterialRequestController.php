@@ -395,7 +395,6 @@ class MaterialRequestController extends Controller
 
         DB::transaction(function () use ($request, $materialRequest) {
             $user = $request->user();
-            $allReturned = true;
 
             $itemsData = $request->input('items', []);
             foreach ($itemsData as $idx => $itemData) {
@@ -618,13 +617,17 @@ class MaterialRequestController extends Controller
 
     private function whatsappUrl(MaterialRequest $materialRequest): ?string
     {
-        $phone = preg_replace('/[^0-9+]/', '', (string) $materialRequest->phone);
+        $phone = preg_replace('/[^0-9]/', '', (string) $materialRequest->phone);
         if (! $phone) {
             return null;
         }
-        $phone = ltrim($phone, '+');
-        if (! str_starts_with($phone, '250')) {
-            $phone = '250'.ltrim($phone, '0');
+        if (str_starts_with($phone, '00')) {
+            $phone = substr($phone, 2);
+        }
+        if (str_starts_with($phone, '0')) {
+            $phone = '250'.substr($phone, 1);
+        } elseif (! str_starts_with($phone, '250')) {
+            $phone = '250'.$phone;
         }
 
         $items = $materialRequest->items

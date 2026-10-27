@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\PublicShareController;
 use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\ShareLinkController;
+use App\Http\Controllers\Api\StorekeeperController;
 use App\Http\Controllers\Api\TaxonomyController;
 use App\Http\Controllers\Api\UploadController;
 use App\Http\Controllers\Api\UserController;
@@ -190,6 +191,11 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
         });
         Route::middleware('can:material-requests.return')->group(function () {
             Route::post('/material-requests/{materialRequest}/return', [MaterialRequestController::class, 'return']);
+        });
+
+        // Storekeeper portal
+        Route::middleware('can:material-requests.view')->group(function () {
+            Route::get('/storekeeper/bookings', [StorekeeperController::class, 'bookings']);
         });
 
         // Equipment inventory

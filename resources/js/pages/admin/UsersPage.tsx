@@ -10,7 +10,7 @@ import { api, fieldErrors } from '@/lib/api';
 import type { User } from '@/lib/types';
 import { formatDate } from '@/lib/utils';
 
-const roles = ['admin', 'multimedia', 'communications', 'management'] as const;
+const roles = ['admin', 'multimedia', 'communications', 'management', 'storekeeper'] as const;
 const schema = z.object({ name: z.string().min(2), email: z.string().email(), role: z.enum(roles) });
 
 /** The admin-created account is unlocked by the welcome email, not by a password typed here. */

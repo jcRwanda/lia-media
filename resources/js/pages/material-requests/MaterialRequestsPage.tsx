@@ -1,7 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { api } from '@/lib/api';
+import { buildMaterialRequestWhatsappLink } from '@/lib/utils';
 import { useState } from 'react';
+import { MessageCircle } from 'lucide-react';
 
 function buildQuery(params: Record<string, any>) {
     const q = new URLSearchParams();
@@ -107,7 +109,19 @@ export default function MaterialRequestsPage() {
                                 <td className="p-2 capitalize">{r.status}</td>
                                 <td className="p-2">{r.return_by}</td>
                                 <td className="p-2">{r.created_at?.slice(0,10)}</td>
-                                <td className="p-2"><Link className="text-blue-600" to={`/material-requests/${r.id}`}>View</Link></td>
+                                <td className="p-2">
+                                    <div className="flex items-center gap-2">
+                                        <Link className="text-blue-600" to={`/material-requests/${r.id}`}>View</Link>
+                                        {['approved', 'issued', 'returned', 'closed'].includes(r.status) ? (() => {
+                                            const url = buildMaterialRequestWhatsappLink(r);
+                                            return url ? (
+                                                <a className="inline-flex items-center gap-1 text-emerald-700" href={url} target="_blank" rel="noreferrer">
+                                                    <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
+                                                </a>
+                                            ) : null;
+                                        })() : null}
+                                    </div>
+                                </td>
                             </tr>
                         ))}
                     </tbody>
