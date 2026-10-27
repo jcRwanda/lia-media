@@ -181,4 +181,27 @@ class StorekeeperPortalTest extends TestCase
         $this->assertStringContainsString(rawurlencode($booking->reference_code), $url);
         $this->assertStringContainsString('Booking%20summary', $url);
     }
+
+    public function test_store_dashboard_endpoint_for_storekeeper(): void
+    {
+        $storekeeper = User::factory()->create(['role' => 'storekeeper']);
+
+        $this->actingAs($storekeeper)
+            ->getJson('/api/store/dashboard')
+            ->assertOk()
+            ->assertJsonStructure([
+                'stats' => ['to_hand_out_today', 'currently_out', 'due_today', 'overdue', 'returned_this_week', 'items_in_inventory', 'items_low_unavailable', 'damaged_needs_repair'],
+                'today',
+                'overdue',
+                'upcoming',
+                'recent_activity',
+            ]);
+    }
+
+    public function test_store_dashboard_requires_store_ability(): void
+    {
+        $multimedia = User::factory()->create(['role' => 'multimedia']);
+
+        $this->actingAs($multimedia)->getJson('/api/store/dashboard')->assertForbidden();
+    }
 }

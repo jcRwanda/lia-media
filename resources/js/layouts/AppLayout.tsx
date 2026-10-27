@@ -20,6 +20,7 @@ const nav: NavItem[] = [
     { to: '/albums', label: 'Albums', icon: Archive, ability: 'library.view' },
     { to: '/review', label: 'Review', icon: ShieldCheck, ability: 'review.approve' },
     { to: '/shares', label: 'Share links', icon: Share2, ability: 'shares.manage' },
+    { to: '/', section: 'Storekeeper', label: 'Dashboard', icon: LayoutDashboard, ability: 'material-requests.issue', end: true },
     { to: '/storekeeper', section: 'Storekeeper', label: 'Portal', icon: ClipboardCheck, ability: 'material-requests.issue' },
     { to: '/material-requests', section: 'Storekeeper', label: 'Material Requests', icon: ClipboardList, ability: 'material-requests.view' },
     { to: '/equipment-inventory', section: 'Storekeeper', label: 'Inventory', icon: FolderOpen, ability: 'equipment.manage' },

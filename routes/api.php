@@ -207,6 +207,9 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
         Route::middleware('can:material-requests.view')->group(function () {
             Route::get('/storekeeper/bookings', [StorekeeperController::class, 'bookings']);
         });
+        Route::middleware('can:material-requests.issue')->group(function () {
+            Route::get('/store/dashboard', [StorekeeperController::class, 'dashboard']);
+        });
 
         // Equipment inventory
         Route::middleware('can:equipment.manage')->group(function () {
