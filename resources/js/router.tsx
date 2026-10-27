@@ -2,8 +2,10 @@ import { createBrowserRouter } from 'react-router';
 import AppLayout, { RequireAbility } from '@/layouts/AppLayout';
 import LoginPage from '@/pages/LoginPage';
 import SetPasswordPage from '@/pages/SetPasswordPage';
+import ProfilePage from '@/pages/ProfilePage';
 import DashboardPage from '@/pages/DashboardPage';
 import UsersPage from '@/pages/admin/UsersPage';
+import RolesPage from '@/pages/admin/RolesPage';
 import AuditPage from '@/pages/admin/AuditPage';
 import UploadPage from '@/pages/UploadPage';
 import LibraryPage from '@/pages/LibraryPage';
@@ -43,12 +45,14 @@ export const routes = [
             { path: '/admin/settings', element: guard('settings.manage', <SettingsPage />) },
             { path: '/upload', element: guard('assets.upload', <UploadPage />) },
             { path: '/admin/users', element: guard('users.manage', <UsersPage />) },
+            { path: '/admin/roles', element: guard('roles.manage', <RolesPage />) },
             { path: '/admin/audit', element: guard('audit.view', <AuditPage />) },
             { path: '/storekeeper', element: guard('material-requests.issue', <StorekeeperPortalPage />) },
             { path: '/material-requests', element: guard('material-requests.view', <MaterialRequestsPage />) },
             { path: '/material-requests/:id', element: guard('material-requests.view', <MaterialRequestDetailPage />) },
             { path: '/equipment-inventory', element: guard('equipment.manage', <EquipmentInventoryPage />) },
             { path: '/equipment-calendar', element: guard('material-requests.view', <EquipmentCalendarPage />) },
+            { path: '/profile', element: <ProfilePage /> },
             { path: '*', element: <p className="text-sm text-neutral-500">Page not found.</p> },
         ],
     },

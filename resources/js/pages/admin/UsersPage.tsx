@@ -11,22 +11,23 @@ import type { User } from '@/lib/types';
 import { formatDate } from '@/lib/utils';
 
 const roles = ['admin', 'multimedia', 'communications', 'management', 'storekeeper'] as const;
-const schema = z.object({ name: z.string().min(2), email: z.string().email(), role: z.enum(roles) });
+const schema = z.object({ name: z.string().min(2), email: z.string().email(), role: z.enum(roles), role_id: z.string().optional() });
 
 /** The admin-created account is unlocked by the welcome email, not by a password typed here. */
 export default function UsersPage() {
     const qc = useQueryClient();
     const users = useQuery({ queryKey: ['users'], queryFn: () => api<{ data: User[] }>('/users') });
+    const rolesList = useQuery({ queryKey: ['roles'], queryFn: () => api<{ data: Array<{ id: number; name: string; slug: string }> }>('/roles') });
     const [created, setCreated] = useState<boolean | null>(null);
     const [resent, setResent] = useState<{ id: number; sent: boolean; error?: string } | null>(null);
-    const form = useForm<z.infer<typeof schema>>({ resolver: zodResolver(schema), defaultValues: { name: '', email: '', role: 'multimedia' } });
+    const form = useForm<z.infer<typeof schema>>({ resolver: zodResolver(schema), defaultValues: { name: '', email: '', role: 'multimedia', role_id: '' } });
     const create = useMutation({
-        mutationFn: (v: z.infer<typeof schema>) => api<{ user: User; welcome_email_sent: boolean }>('/users', { method: 'POST', json: v }),
+        mutationFn: (v: z.infer<typeof schema>) => api<{ user: User; welcome_email_sent: boolean }>('/users', { method: 'POST', json: { name: v.name, email: v.email, role: v.role, role_id: v.role_id ? Number(v.role_id) : undefined } }),
         onSuccess: (r) => { form.reset(); setCreated(r.welcome_email_sent); qc.invalidateQueries({ queryKey: ['users'] }); },
         onError: (e) => Object.entries(fieldErrors(e)).forEach(([k, m]) => form.setError(k as never, { message: m })),
     });
     const update = useMutation({
-        mutationFn: ({ id, ...v }: { id: number; role?: string; status?: string }) => api(`/users/${id}`, { method: 'PATCH', json: v }),
+        mutationFn: ({ id, ...v }: { id: number; role?: string; role_id?: number | null; status?: string }) => api(`/users/${id}`, { method: 'PATCH', json: v }),
         onSettled: () => qc.invalidateQueries({ queryKey: ['users'] }),
         onError: (e) => alert(Object.values(fieldErrors(e))[0] || (e as Error).message),
     });
@@ -36,6 +37,7 @@ export default function UsersPage() {
         onError: (e, u) => setResent({ id: u.id, sent: false, error: (e as Error).message }),
     });
     const e = form.formState.errors;
+    const customRoles = rolesList.data?.data ?? [];
     return (
         <>
             <PageHeader title="Users & roles" description="Staff accounts for the archive. Separate from the learning portal." />
@@ -56,7 +58,22 @@ export default function UsersPage() {
                                     </div>
                                 ) : null}
                             </div>
-                            <Select aria-label={`Role for ${u.name}`} className="h-8 w-40" value={u.role} onChange={(ev) => update.mutate({ id: u.id, role: ev.target.value })}>{roles.map((r) => <option key={r}>{r}</option>)}</Select>
+                            <Select aria-label={`Role for ${u.name}`} className="h-8 w-40" value={(u as any).role_id ? String((u as any).role_id) : u.role} onChange={(ev) => {
+                                const val = ev.target.value;
+                                if (customRoles.find(r => String(r.id) === val)) {
+                                    update.mutate({ id: u.id, role_id: Number(val) });
+                                } else {
+                                    update.mutate({ id: u.id, role: val });
+                                }
+                            }}>
+                                {customRoles.length > 0 ? (
+                                    <>
+                                        {customRoles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                                    </>
+                                ) : (
+                                    roles.map((r) => <option key={r}>{r}</option>)
+                                )}
+                            </Select>
                             <Button size="sm" variant={u.status === 'active' ? 'destructive' : 'secondary'} onClick={() => update.mutate({ id: u.id, status: u.status === 'active' ? 'disabled' : 'active' })}>{u.status === 'active' ? 'Disable' : 'Enable'}</Button>
                             <Button
                                 size="sm"
@@ -79,7 +96,12 @@ export default function UsersPage() {
                     <form className="mt-3 space-y-3" onSubmit={form.handleSubmit((v) => create.mutate(v))} noValidate>
                         <Field label="Name" error={e.name?.message}><Input {...form.register('name')} /></Field>
                         <Field label="Email" error={e.email?.message}><Input type="email" {...form.register('email')} /></Field>
-                        <Field label="Role" error={e.role?.message}><Select {...form.register('role')}>{roles.map((r) => <option key={r}>{r}</option>)}</Select></Field>
+                        <Field label="Role" error={e.role?.message}>
+                            <Select {...form.register('role_id')}>
+                                <option value="">Default role</option>
+                                {customRoles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                            </Select>
+                        </Field>
                         {created !== null ? (
                             <p role="status" className={created ? 'rounded-lg bg-emerald-50 p-2 text-xs text-emerald-700' : 'rounded-lg bg-amber-50 p-2 text-xs text-amber-800'}>
                                 {created ? 'User created — the welcome email with their temporary password is on its way.' : 'User created, but the welcome email could not be sent. Use “Resend welcome email” once mail is working.'}

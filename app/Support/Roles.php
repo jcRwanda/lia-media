@@ -34,6 +34,7 @@ final class Roles
         'dashboard.view' => [self::MULTIMEDIA, self::COMMUNICATIONS, self::MANAGEMENT],
         'audit.view' => [self::MANAGEMENT],
         'users.manage' => [],
+        'roles.manage' => [],
         'settings.manage' => [],
         'material-requests.view' => [self::COMMUNICATIONS, self::MANAGEMENT, self::STOREKEEPER],
         'material-requests.manage' => [self::COMMUNICATIONS, self::MANAGEMENT],

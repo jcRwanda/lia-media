@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\ShareLinkController;
 use App\Http\Controllers\Api\StorekeeperController;
+use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\TaxonomyController;
 use App\Http\Controllers\Api\UploadController;
 use App\Http\Controllers\Api\UserController;
@@ -74,7 +75,10 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
     // Available before the temporary password has been replaced.
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::get('/auth/me', [AuthController::class, 'me']);
+    Route::patch('/auth/me', [AuthController::class, 'updateProfile']);
+    Route::post('/auth/me/photo', [AuthController::class, 'uploadPhoto']);
     Route::post('/auth/change-password', [AuthController::class, 'changePassword']);
+    Route::post('/auth/change-password-with-current', [AuthController::class, 'changePasswordWithCurrent']);
 
     // Everything else stays locked until must_change_password is cleared.
     Route::middleware('must_change')->group(function () {
@@ -85,6 +89,12 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
             Route::post('/users', [UserController::class, 'store']);
             Route::patch('/users/{user}', [UserController::class, 'update']);
             Route::post('/users/{user}/resend-welcome', [UserController::class, 'resendWelcome'])->whereNumber('user');
+        });
+        Route::middleware('can:roles.manage')->group(function () {
+            Route::get('/roles', [RoleController::class, 'index']);
+            Route::post('/roles', [RoleController::class, 'store']);
+            Route::patch('/roles/{role}', [RoleController::class, 'update']);
+            Route::delete('/roles/{role}', [RoleController::class, 'destroy']);
         });
         Route::middleware('can:library.view')->group(function () {
             Route::get('/assets', [AssetController::class, 'index']);

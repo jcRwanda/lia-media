@@ -1,4 +1,4 @@
-import { Archive, BarChart3, CalendarDays, ClipboardCheck, ClipboardList, FolderOpen, FolderTree, Images, LayoutDashboard, LogOut, Menu, ScrollText, Settings, Share2, ShieldCheck, Upload, Users, X } from 'lucide-react';
+import { Archive, BarChart3, CalendarDays, ClipboardCheck, ClipboardList, FolderOpen, FolderTree, Images, LayoutDashboard, LogOut, Menu, ScrollText, Settings, Share2, Shield, ShieldCheck, Upload, User, Users, X } from 'lucide-react';
 import { useState } from 'react';
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router';
 import { useAuth } from '@/auth/AuthContext';
@@ -27,6 +27,7 @@ const nav: NavItem[] = [
     { to: '/taxonomy', label: 'Projects & events', icon: FolderTree, ability: 'library.view' },
     { to: '/storage', label: 'Storage', icon: BarChart3, ability: 'dashboard.view' },
     { to: '/admin/users', label: 'Users', icon: Users, ability: 'users.manage' },
+    { to: '/admin/roles', label: 'Roles', icon: Shield, ability: 'roles.manage' },
     { to: '/admin/audit', label: 'Audit log', icon: ScrollText, ability: 'audit.view' },
     { to: '/admin/settings', label: 'Settings', icon: Settings, ability: 'settings.manage' },
 ];
@@ -74,9 +75,12 @@ export default function AppLayout() {
                     <button className="lg:hidden" aria-label="Open menu" onClick={() => setOpen(true)}><Menu className="h-5 w-5" /></button>
                     <div className="lg:hidden"><Brand /></div>
                     <div className="ml-auto flex items-center gap-3 text-sm">
-                        <span className="hidden text-neutral-600 sm:inline">{user.name}</span>
+                        <NavLink to="/profile" className="hidden items-center gap-1 text-neutral-600 hover:text-lia-700 sm:flex">
+                            <User className="h-4 w-4" />
+                            <span>{user.name}</span>
+                        </NavLink>
                         <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] capitalize text-neutral-600">{user.role}</span>
-                        <button onClick={() => logout()} className="text-neutral-500 hover:text-lia-700" aria-label="Sign out"><LogOut className="h-4 w-4" /></button>
+                        <button onClick={() => { logout(); }} className="text-neutral-500 hover:text-lia-700" aria-label="Sign out"><LogOut className="h-4 w-4" /></button>
                     </div>
                 </header>
                 {open ? (

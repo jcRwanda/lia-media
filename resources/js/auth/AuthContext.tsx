@@ -36,12 +36,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const value: AuthState = {
         user,
         loading: q.isLoading,
-        can: (a) => !!user && (user.role === 'admin' || user.abilities.includes(a)),
+        can: (a) => !!user && ((user as any).role === 'admin' || user.abilities?.includes(a)),
         refresh: () => q.refetch(),
         logout: async () => {
-            await api('/auth/logout', { method: 'POST' }).catch(() => null);
+            try {
+                await api('/auth/logout', { method: 'POST' });
+            } catch (e) {
+                // ignore
+            }
+            qc.removeQueries({ queryKey: ['me'] });
             qc.clear();
             qc.setQueryData(['me'], null);
+            window.location.href = '/login';
         },
     };
     return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

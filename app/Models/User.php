@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Storage\ObjectStorage;
 use App\Support\Roles;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -15,7 +16,7 @@ class User extends Authenticatable
     /** @use HasFactory<UserFactory> */
     use HasApiTokens, HasFactory, Notifiable;
 
-    protected $fillable = ['name', 'email', 'password', 'role', 'role_id', 'status', 'must_change_password'];
+    protected $fillable = ['name', 'email', 'password', 'role', 'role_id', 'status', 'must_change_password', 'phone', 'photo_path'];
 
     protected $hidden = ['password', 'remember_token'];
 
@@ -77,6 +78,18 @@ class User extends Authenticatable
             $abilities = Roles::abilitiesFor($this->role);
         }
 
+        $photoUrl = null;
+        if ($this->photo_path) {
+            try {
+                $storage = app(ObjectStorage::class);
+                if (method_exists($storage, 'temporaryUrl')) {
+                    $photoUrl = $storage->temporaryUrl($this->photo_path, now()->addMinutes(60));
+                }
+            } catch (\Throwable $e) {
+                $photoUrl = null;
+            }
+        }
+
         return [
             'id' => $this->id, 'name' => $this->name, 'email' => $this->email, 'role' => $this->role,
             'role_id' => $this->role_id,
@@ -84,6 +97,9 @@ class User extends Authenticatable
             'last_login_at' => $this->last_login_at?->toIso8601String(),
             'must_change_password' => (bool) $this->must_change_password,
             'first_login_completed' => (bool) $this->last_login_at && ! $this->must_change_password,
+            'phone' => $this->phone ?? null,
+            'photo_path' => $this->photo_path ?? null,
+            'photo_url' => $photoUrl,
         ];
     }
 }

@@ -5,11 +5,13 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Storage\ObjectStorage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException; 
 
 class AuthController extends Controller
 {
@@ -32,10 +34,14 @@ class AuthController extends Controller
 
     public function logout(Request $request): JsonResponse
     {
-        $this->audit->log('auth.logout', $request->user());
+        if ($request->user()) {
+            $this->audit->log('auth.logout', $request->user());
+        }
         Auth::guard('web')->logout();
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
+        if ($request->hasSession()) {
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        }
 
         return response()->json(['ok' => true]);
     }
@@ -63,5 +69,81 @@ class AuthController extends Controller
         $this->audit->log('auth.password_changed', $user);
 
         return response()->json(['user' => $user->toApi()]);
+    }
+
+    public function changePasswordWithCurrent(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $data = $request->validate([
+            'current_password' => ['required', 'string'],
+            'password' => [
+                'required', 'string', 'min:10', 'confirmed',
+                function (string $attribute, mixed $value, \Closure $fail) use ($user) {
+                    if (is_string($value) && Hash::check($value, $user->password)) {
+                        $fail('The new password must be different from your current password.');
+                    }
+                },
+            ],
+        ]);
+
+        if (! Hash::check($data['current_password'], $user->password)) {
+            throw ValidationException::withMessages(['current_password' => 'Current password is incorrect.']);
+        }
+
+        $user->update(['password' => $data['password']]);
+        $this->audit->log('auth.password_changed', $user);
+
+        return response()->json(['user' => $user->toApi()]);
+    }
+
+    public function updateProfile(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $data = $request->validate([
+            'name' => ['sometimes', 'string', 'max:120'],
+            'phone' => ['sometimes', 'nullable', 'string', 'max:40'],
+            'photo_path' => ['sometimes', 'nullable', 'string', 'max:255'],
+        ]);
+        $user->fill($data);
+        $user->save();
+        $this->audit->log('user.profile_updated', $user);
+
+        return response()->json(['user' => $user->toApi()]);
+    }
+
+    public function uploadPhoto(Request $request, ObjectStorage $storage): JsonResponse
+    {
+        $user = $request->user();
+        $request->validate([
+            'filename' => ['sometimes', 'string'],
+            'content_type' => ['sometimes', 'string'],
+            'photo' => ['sometimes', 'file', 'image', 'max:10240'],
+        ]);
+
+        if ($request->hasFile('photo')) {
+            $file = $request->file('photo');
+            $key = 'profile-photos/'.$user->id.'/'.Str::uuid().'.'.$file->getClientOriginalExtension();
+            $storage->put($key, $file->get(), ['ContentType' => $file->getMimeType()]);
+            $user->forceFill(['photo_path' => $key])->save();
+            $url = method_exists($storage, 'temporaryUrl') ? $storage->temporaryUrl($key, now()->addMinutes(60)) : null;
+            return response()->json(['photo_url' => $url, 'user' => $user->toApi()]);
+        }
+
+        // Generate presigned upload URL if supported
+        $filename = $request->input('filename') ?: 'photo.jpg';
+        $ext = pathinfo($filename, PATHINFO_EXTENSION) ?: 'jpg';
+        $key = 'profile-photos/'.$user->id.'/'.Str::uuid().'.'.$ext;
+        try {
+            if (method_exists($storage, 'presignedPut')) {
+                $presigned = $storage->presignedPut($key, $request->input('content_type') ?: 'image/jpeg', now()->addMinutes(10));
+                $user->forceFill(['photo_path' => $key])->save();
+                return response()->json(['upload_url' => $presigned->url ?? ($presigned['url'] ?? null), 'headers' => $presigned->headers ?? ($presigned['headers'] ?? []), 'key' => $key, 'photo_url' => method_exists($storage, 'temporaryUrl') ? $storage->temporaryUrl($key, now()->addMinutes(60)) : null]);
+            }
+        } catch (\Throwable $e) {
+            // fall through
+        }
+        $user->forceFill(['photo_path' => $key])->save();
+        $url = method_exists($storage, 'temporaryUrl') ? $storage->temporaryUrl($key, now()->addMinutes(60)) : null;
+        return response()->json(['photo_url' => $url, 'key' => $key]);
     }
 }
