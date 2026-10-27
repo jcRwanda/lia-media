@@ -39,4 +39,9 @@ class EquipmentItem extends Model
     {
         return $this->hasMany(EquipmentBlock::class);
     }
+
+    public function images(): HasMany
+    {
+        return $this->hasMany(EquipmentItemImage::class)->orderBy('sort_order');
+    }
 }

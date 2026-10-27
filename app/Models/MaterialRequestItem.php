@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class MaterialRequestItem extends Model
 {
@@ -59,5 +60,20 @@ class MaterialRequestItem extends Model
     public function receivedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'received_by');
+    }
+
+    public function proofs(): HasMany
+    {
+        return $this->hasMany(MaterialRequestItemProof::class)->orderBy('sort_order');
+    }
+
+    public function issueProofs(): HasMany
+    {
+        return $this->hasMany(MaterialRequestItemProof::class)->where('type', 'issue')->orderBy('sort_order');
+    }
+
+    public function returnProofs(): HasMany
+    {
+        return $this->hasMany(MaterialRequestItemProof::class)->where('type', 'return')->orderBy('sort_order');
     }
 }

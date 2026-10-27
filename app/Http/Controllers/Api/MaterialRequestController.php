@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class MaterialRequestController extends Controller
 {
@@ -104,12 +105,37 @@ class MaterialRequestController extends Controller
             }
         }
 
-        $materialRequest->load(['items.equipmentItem', 'audits.actor', 'cohort:id,name,code', 'apiClient:id,name', 'finalWorks', 'finalWorkReviewedBy']);
+        $materialRequest->load(['items.equipmentItem.images', 'items.proofs', 'items.issuedBy:id,name', 'items.receivedBy:id,name', 'audits.actor', 'cohort:id,name,code', 'apiClient:id,name', 'finalWorks', 'finalWorkReviewedBy']);
 
         $payload = $materialRequest->toArray();
         $payload['source'] = $materialRequest->source ?? $materialRequest->apiClient?->name ?? 'Direct/Hosted form';
         $payload['source_label'] = $payload['source'];
         $payload['is_overdue'] = $materialRequest->isOverdue();
+        $payload['pickup_location'] = $this->pickupLocation($materialRequest);
+        $payload['whatsapp_url'] = $this->whatsappUrl($materialRequest);
+        $payload['items'] = $materialRequest->items->map(function ($item) {
+            $data = $item->toArray();
+            $data['issued_by'] = $item->issuedBy?->name;
+            $data['received_by'] = $item->receivedBy?->name;
+            $data['issue_proof_urls'] = $item->proofs->where('type', 'issue')
+                ->map(fn ($proof) => $this->files->presign($proof->path, $proof->name))
+                ->filter()->values()->all();
+            $data['return_proof_urls'] = $item->proofs->where('type', 'return')
+                ->map(fn ($proof) => $this->files->presign($proof->path, $proof->name))
+                ->filter()->values()->all();
+            if ($item->equipmentItem) {
+                $data['equipment_item'] = [
+                    ...$item->equipmentItem->toArray(),
+                    'images' => $item->equipmentItem->images->map(fn ($image) => [
+                        'id' => $image->id,
+                        'name' => $image->name,
+                        'url' => $this->files->presign($image->path, $image->name),
+                    ])->values()->all(),
+                ];
+            }
+
+            return $data;
+        })->values()->all();
         $payload['id_document_url'] = $this->files->presign($materialRequest->id_document_path, $materialRequest->id_document_name);
         $payload['signature_url'] = $this->files->presign($materialRequest->signature_path, 'signature.png');
         $payload['final_works'] = $materialRequest->finalWorks->map(fn ($fw) => [
@@ -248,38 +274,79 @@ class MaterialRequestController extends Controller
             return response()->json(['message' => 'Invalid state transition'], 422);
         }
 
-        $validator = Validator::make($request->all(), [
+        $rules = [
             'items' => ['required', 'array'],
             'items.*.id' => ['required', 'integer', 'exists:material_request_items,id'],
             'items.*.qty_issued' => ['required', 'integer', 'min:1'],
             'items.*.issue_condition' => ['nullable', 'string'],
-            'items.*.issue_proof' => ['required', 'file', 'image', 'max:10240'],
-        ]);
+            'items.*.note' => ['nullable', 'string'],
+        ];
+
+        $validator = Validator::make($request->all(), $rules);
 
         if ($validator->fails()) {
             return response()->json(['message' => 'Validation failed', 'errors' => $validator->errors()], 422);
         }
 
-        DB::transaction(function () use ($request, $materialRequest, $validator) {
+        DB::transaction(function () use ($request, $materialRequest) {
             $user = $request->user();
 
-            foreach ($validator->validated()['items'] as $idx => $itemData) {
-                $item = MaterialRequestItem::query()->find($itemData['id']);
+            $itemsData = $request->input('items', []);
+            foreach ($itemsData as $idx => $itemData) {
+                $item = MaterialRequestItem::query()->find($itemData['id'] ?? null);
                 if (! $item || $item->material_request_id !== $materialRequest->id) {
                     continue;
                 }
 
-                $proof = $request->file("items.{$idx}.issue_proof") ?? null;
-                if (! $proof) {
-                    throw new ValidationException($validator);
+                // Collect proofs (multiple or single)
+                $proofFiles = [];
+                if ($request->hasFile("items.{$idx}.issue_proofs")) {
+                    $files = $request->file("items.{$idx}.issue_proofs");
+                    if (is_array($files)) {
+                        $proofFiles = array_merge($proofFiles, $files);
+                    } else {
+                        $proofFiles[] = $files;
+                    }
+                }
+                if ($request->hasFile("items.{$idx}.issue_proof")) {
+                    $proof = $request->file("items.{$idx}.issue_proof");
+                    if (is_array($proof)) {
+                        $proofFiles = array_merge($proofFiles, $proof);
+                    } else {
+                        $proofFiles[] = $proof;
+                    }
                 }
 
-                $path = $proof->store('material-requests/issue-proofs', 'public');
+                if (empty($proofFiles)) {
+                    throw ValidationException::withMessages(["items.{$idx}.issue_proof" => ['Photo proof required.']]);
+                }
+
+                $firstPath = null;
+                foreach ($proofFiles as $pIdx => $proof) {
+                    if (! $proof->isValid() || ! str_starts_with($proof->getMimeType() ?? '', 'image/')) {
+                        throw ValidationException::withMessages(["items.{$idx}.issue_proof" => ['Invalid image.']]);
+                    }
+                    if ($proof->getSize() > 10240 * 1024) {
+                        throw ValidationException::withMessages(["items.{$idx}.issue_proof" => ['Image too large.']]);
+                    }
+                    $path = $proof->store('material-requests/issue-proofs', 'public');
+                    if ($firstPath === null) {
+                        $firstPath = $path;
+                    }
+                    $item->proofs()->create([
+                        'type' => 'issue',
+                        'path' => $path,
+                        'name' => $proof->getClientOriginalName(),
+                        'mime' => $proof->getMimeType(),
+                        'sort_order' => $pIdx,
+                    ]);
+                }
 
                 $item->update([
                     'qty_issued' => $itemData['qty_issued'],
                     'issue_condition' => $itemData['issue_condition'] ?? null,
-                    'issue_proof_path' => $path,
+                    'note' => $itemData['note'] ?? $item->note,
+                    'issue_proof_path' => $firstPath ?? $item->issue_proof_path,
                     'issued_at' => now(),
                     'issued_by' => $user?->id,
                     'status' => 'issued',
@@ -310,56 +377,98 @@ class MaterialRequestController extends Controller
             abort(403);
         }
 
-        if (! in_array($materialRequest->status, ['issued', 'approved'], true)) {
-            // allow returning even if partially issued
-        }
         $previousStatus = $materialRequest->status;
 
-        $validator = Validator::make($request->all(), [
+        $rules = [
             'items' => ['required', 'array'],
             'items.*.id' => ['required', 'integer', 'exists:material_request_items,id'],
             'items.*.qty_returned' => ['required', 'integer', 'min:1'],
             'items.*.return_condition' => ['nullable', 'string'],
-            'items.*.return_proof' => ['required', 'file', 'image', 'max:10240'],
-        ]);
+            'items.*.note' => ['nullable', 'string'],
+        ];
+
+        $validator = Validator::make($request->all(), $rules);
 
         if ($validator->fails()) {
             return response()->json(['message' => 'Validation failed', 'errors' => $validator->errors()], 422);
         }
 
-        DB::transaction(function () use ($request, $materialRequest, $validator) {
+        DB::transaction(function () use ($request, $materialRequest) {
             $user = $request->user();
             $allReturned = true;
 
-            foreach ($validator->validated()['items'] as $idx => $itemData) {
-                $item = MaterialRequestItem::query()->find($itemData['id']);
+            $itemsData = $request->input('items', []);
+            foreach ($itemsData as $idx => $itemData) {
+                $item = MaterialRequestItem::query()->find($itemData['id'] ?? null);
                 if (! $item || $item->material_request_id !== $materialRequest->id) {
                     continue;
                 }
 
-                $proof = $request->file("items.{$idx}.return_proof") ?? null;
-                if (! $proof) {
-                    throw new ValidationException($validator);
+                $proofFiles = [];
+                if ($request->hasFile("items.{$idx}.return_proofs")) {
+                    $files = $request->file("items.{$idx}.return_proofs");
+                    if (is_array($files)) {
+                        $proofFiles = array_merge($proofFiles, $files);
+                    } else {
+                        $proofFiles[] = $files;
+                    }
+                }
+                if ($request->hasFile("items.{$idx}.return_proof")) {
+                    $proof = $request->file("items.{$idx}.return_proof");
+                    if (is_array($proof)) {
+                        $proofFiles = array_merge($proofFiles, $proof);
+                    } else {
+                        $proofFiles[] = $proof;
+                    }
                 }
 
-                $path = $proof->store('material-requests/return-proofs', 'public');
+                if (empty($proofFiles)) {
+                    throw ValidationException::withMessages(["items.{$idx}.return_proof" => ['Photo proof required.']]);
+                }
 
-                $returned = $itemData['qty_returned'];
+                $firstPath = null;
+                foreach ($proofFiles as $pIdx => $proof) {
+                    if (! $proof->isValid() || ! str_starts_with($proof->getMimeType() ?? '', 'image/')) {
+                        throw ValidationException::withMessages(["items.{$idx}.return_proof" => ['Invalid image.']]);
+                    }
+                    if ($proof->getSize() > 10240 * 1024) {
+                        throw ValidationException::withMessages(["items.{$idx}.return_proof" => ['Image too large.']]);
+                    }
+                    $path = $proof->store('material-requests/return-proofs', 'public');
+                    if ($firstPath === null) {
+                        $firstPath = $path;
+                    }
+                    $item->proofs()->create([
+                        'type' => 'return',
+                        'path' => $path,
+                        'name' => $proof->getClientOriginalName(),
+                        'mime' => $proof->getMimeType(),
+                        'sort_order' => $pIdx,
+                    ]);
+                }
+
+                $returned = (int) $itemData['qty_returned'];
                 $item->update([
                     'qty_returned' => ($item->qty_returned ?? 0) + $returned,
                     'return_condition' => $itemData['return_condition'] ?? null,
-                    'return_proof_path' => $path,
+                    'note' => $itemData['note'] ?? $item->note,
+                    'return_proof_path' => $firstPath ?? $item->return_proof_path,
                     'returned_at' => now(),
                     'received_by' => $user?->id,
                     'status' => 'returned',
                 ]);
+            }
 
-                if (($item->qty_returned ?? 0) < ($item->qty_issued ?? $item->qty_approved ?? $item->qty_requested)) {
-                    $allReturned = false;
+            $materialRequest->refresh();
+            $allDone = true;
+            foreach ($materialRequest->items()->get() as $it) {
+                if (($it->qty_returned ?? 0) < ($it->qty_issued ?? $it->qty_approved ?? $it->qty_requested)) {
+                    $allDone = false;
+                    break;
                 }
             }
 
-            if ($allReturned) {
+            if ($allDone) {
                 $materialRequest->update([
                     'status' => 'closed',
                     'closed_by' => $user?->id,
@@ -371,7 +480,7 @@ class MaterialRequestController extends Controller
                 ]);
             }
 
-            $this->audit->log($materialRequest, $allReturned ? 'closed' : 'returned', [], $user);
+            $this->audit->log($materialRequest, $allDone ? 'closed' : 'returned', [], $user);
         });
 
         $materialRequest->refresh();
@@ -423,7 +532,7 @@ class MaterialRequestController extends Controller
         return response()->json(['audits' => $audits]);
     }
 
-    public function finalWorkFile(Request $request, MaterialRequest $materialRequest, MaterialRequestFinalWork $finalWork): \Symfony\Component\HttpFoundation\StreamedResponse
+    public function finalWorkFile(Request $request, MaterialRequest $materialRequest, MaterialRequestFinalWork $finalWork): StreamedResponse
     {
         if (! $request->user()?->canDo('material-requests.view')) {
             abort(403);
@@ -496,5 +605,39 @@ class MaterialRequestController extends Controller
         $this->webhooks->dispatchEvent($materialRequest->fresh(['apiClient']), 'final_work.needs_changes');
 
         return response()->json(['message' => 'Changes requested', 'final_work_status' => $materialRequest->final_work_status]);
+    }
+
+    private function pickupLocation(MaterialRequest $materialRequest): string
+    {
+        return (string) ($materialRequest->project_location
+            ?: $materialRequest->shoot_location
+            ?: collect([$materialRequest->project_cell, $materialRequest->project_sector, $materialRequest->project_district, $materialRequest->project_province])->filter()->join(', ')
+            ?: $materialRequest->residential_address
+            ?: '');
+    }
+
+    private function whatsappUrl(MaterialRequest $materialRequest): ?string
+    {
+        $phone = preg_replace('/[^0-9+]/', '', (string) $materialRequest->phone);
+        if (! $phone) {
+            return null;
+        }
+        $phone = ltrim($phone, '+');
+        if (! str_starts_with($phone, '250')) {
+            $phone = '250'.ltrim($phone, '0');
+        }
+
+        $items = $materialRequest->items
+            ->map(function ($item) {
+                $name = $item->equipmentItem?->name ?? 'Item';
+                $qty = $item->qty_approved ?? $item->qty_issued ?? $item->qty_requested;
+
+                return $qty ? "- {$name} x{$qty}" : "- {$name}";
+            })
+            ->join("\n");
+
+        $text = "Booking summary\nReference: {$materialRequest->reference_code}\nName: {$materialRequest->full_name}\nItems:\n{$items}\nPickup: ".($materialRequest->needed_from?->toDateString() ?? '')."\nReturn: ".($materialRequest->return_by?->toDateString() ?? '')."\nPickup location: {$this->pickupLocation($materialRequest)}";
+
+        return 'https://wa.me/'.$phone.'?text='.rawurlencode($text);
     }
 }
