@@ -11,6 +11,8 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
+        $this->call(RoleSeeder::class);
+
         if (app()->environment('production')) {
             $this->command?->error('Refusing to seed demo users in production.');
 
@@ -22,3 +24,5 @@ class DatabaseSeeder extends Seeder
         $this->call(DemoContentSeeder::class);
     }
 }
+
+// Add role seeding
