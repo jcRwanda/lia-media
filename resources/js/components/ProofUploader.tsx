@@ -1,6 +1,7 @@
 import { Camera, ImagePlus, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { looksLikeImage, withImageType } from '@/lib/images';
 
 interface ProofUploaderProps {
     label?: string;
@@ -29,9 +30,9 @@ export function ProofUploader({ label = 'Photo proof', files, onChange, maxFiles
         if (!incoming || incoming.length === 0) return;
         const next = [...files];
         for (const file of Array.from(incoming)) {
-            if (!file.type.startsWith('image/')) continue;
+            if (!looksLikeImage(file)) continue;
             if (next.length >= maxFiles) break;
-            next.push(file);
+            next.push(withImageType(file));
         }
         onChange(next);
     };
@@ -48,8 +49,8 @@ export function ProofUploader({ label = 'Photo proof', files, onChange, maxFiles
             </div>
             {helpText ? <div className="text-[11px] text-neutral-500">{helpText}</div> : null}
             <div className="flex flex-wrap gap-2">
-                <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => addFiles(e.target.files)} />
-                <input ref={galleryRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => addFiles(e.target.files)} />
+                <input ref={cameraRef} type="file" accept="image/*,.heic,.heif" capture="environment" className="hidden" onChange={(e) => addFiles(e.target.files)} />
+                <input ref={galleryRef} type="file" accept="image/*,.heic,.heif" multiple className="hidden" onChange={(e) => addFiles(e.target.files)} />
                 <Button type="button" variant="secondary" size="sm" onClick={() => cameraRef.current?.click()}>
                     <Camera className="h-4 w-4" /> Take photo
                 </Button>

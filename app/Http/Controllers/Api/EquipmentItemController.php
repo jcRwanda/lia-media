@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\EquipmentItem;
 use App\Services\MaterialRequestService;
+use App\Models\EquipmentItemImage;
+use App\Storage\ObjectStorage;
 use App\Support\ImageNormalizer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -166,7 +168,11 @@ class EquipmentItemController extends Controller
             }
         }
 
-        foreach ($files as $idx => $file) {
+        if ($files !== []) {
+            $this->adoptLegacyPhoto($item);
+        }
+        $next = ((int) $item->images()->max('sort_order')) + 1;
+        foreach ($files as $file) {
             if (! $file || ! $file->isValid()) {
                 continue;
             }
@@ -176,12 +182,77 @@ class EquipmentItemController extends Controller
                 'path' => $path,
                 'name' => $stored['name'],
                 'mime' => $stored['mime'],
-                'sort_order' => $item->images()->count() + $idx,
+                'sort_order' => $next++,
             ]);
             if (! $item->photo_path) {
                 $item->update(['photo_path' => $path]);
             }
         }
+    }
+
+    /** Items created before the gallery only have photo_path: turn it into a managed image row. */
+    private function adoptLegacyPhoto(EquipmentItem $item): void
+    {
+        if ($item->photo_path && ! $item->images()->where('path', $item->photo_path)->exists()) {
+            $item->images()->increment('sort_order');
+            $item->images()->create([
+                'path' => $item->photo_path,
+                'name' => basename($item->photo_path),
+                'mime' => null,
+                'sort_order' => 0,
+            ]);
+        }
+    }
+
+    /** Re-number images in the given order; the first one becomes the main photo. */
+    private function applyOrder(EquipmentItem $item, array $ids): void
+    {
+        $images = $item->images()->get()->keyBy('id');
+        $ordered = collect($ids)->map(fn ($id) => (int) $id)->filter(fn ($id) => $images->has($id))->unique()->values();
+        $rest = $images->keys()->diff($ordered);
+        foreach ($ordered->concat($rest)->values() as $pos => $id) {
+            $images[$id]->update(['sort_order' => $pos]);
+        }
+        $first = $item->images()->first();
+        $item->update(['photo_path' => $first?->path]);
+    }
+
+    public function reorderImages(Request $request, EquipmentItem $equipmentItem): JsonResponse
+    {
+        $data = $request->validate(['ids' => ['required', 'array', 'min:1'], 'ids.*' => ['integer']]);
+        $this->adoptLegacyPhoto($equipmentItem);
+        $this->applyOrder($equipmentItem, $data['ids']);
+
+        return response()->json(['item' => $this->present($equipmentItem->fresh()->load('images'))]);
+    }
+
+    public function setMainImage(EquipmentItem $equipmentItem, EquipmentItemImage $image): JsonResponse
+    {
+        abort_unless($image->equipment_item_id === $equipmentItem->id, 404);
+        $this->adoptLegacyPhoto($equipmentItem);
+        $ids = $equipmentItem->images()->pluck('id')->reject(fn ($id) => $id === $image->id)->prepend($image->id)->all();
+        $this->applyOrder($equipmentItem, $ids);
+
+        return response()->json(['item' => $this->present($equipmentItem->fresh()->load('images'))]);
+    }
+
+    public function destroyImage(EquipmentItem $equipmentItem, EquipmentItemImage $image, ObjectStorage $storage): JsonResponse
+    {
+        abort_unless($image->equipment_item_id === $equipmentItem->id, 404);
+        $path = $image->path;
+        $image->delete();
+        $stillUsed = EquipmentItemImage::query()->where('path', $path)->exists()
+            || EquipmentItem::query()->where('photo_path', $path)->where('id', '!=', $equipmentItem->id)->exists();
+        if (! $stillUsed) {
+            try {
+                $storage->delete($path);
+            } catch (\Throwable) {
+                // object already gone; the row is what matters
+            }
+        }
+        $this->applyOrder($equipmentItem, $equipmentItem->images()->pluck('id')->all());
+
+        return response()->json(['item' => $this->present($equipmentItem->fresh()->load('images'))]);
     }
 
     /** @return array{path: string, name: string, mime: string} */
@@ -217,6 +288,7 @@ class EquipmentItemController extends Controller
             'name' => $image->name,
             'mime' => $image->mime,
             'url' => $this->files->presign($image->path, $image->name),
+            'is_main' => $image->path === $item->photo_path,
         ])->values()->all();
 
         return $payload;

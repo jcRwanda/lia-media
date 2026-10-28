@@ -235,6 +235,9 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
             Route::delete('/equipment-blocks/{equipmentBlock}', [EquipmentBlockController::class, 'destroy']);
             Route::patch('/equipment-items/{equipmentItem}', [EquipmentItemController::class, 'update']);
             Route::delete('/equipment-items/{equipmentItem}', [EquipmentItemController::class, 'destroy']);
+            Route::put('/equipment-items/{equipmentItem}/images/order', [EquipmentItemController::class, 'reorderImages']);
+            Route::post('/equipment-items/{equipmentItem}/images/{image}/main', [EquipmentItemController::class, 'setMainImage']);
+            Route::delete('/equipment-items/{equipmentItem}/images/{image}', [EquipmentItemController::class, 'destroyImage']);
         });
     });
 });
