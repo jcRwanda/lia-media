@@ -13,6 +13,7 @@ use App\Models\MaterialRequestItem;
 use App\Services\MaterialRequestAuditService;
 use App\Services\MaterialRequestService;
 use App\Services\MaterialRequestWebhookService;
+use App\Support\ImageNormalizer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -329,15 +330,16 @@ class MaterialRequestController extends Controller
                     if ($proof->getSize() > 10240 * 1024) {
                         throw ValidationException::withMessages(["items.{$idx}.issue_proof" => ['Image too large.']]);
                     }
-                    $path = $proof->store('material-requests/issue-proofs', 'public');
+                    $stored = ImageNormalizer::store($proof, 'material-requests/issue-proofs');
+                    $path = $stored['path'];
                     if ($firstPath === null) {
                         $firstPath = $path;
                     }
                     $item->proofs()->create([
                         'type' => 'issue',
                         'path' => $path,
-                        'name' => $proof->getClientOriginalName(),
-                        'mime' => $proof->getMimeType(),
+                        'name' => $stored['name'],
+                        'mime' => $stored['mime'],
                         'sort_order' => $pIdx,
                     ]);
                 }
@@ -433,15 +435,16 @@ class MaterialRequestController extends Controller
                     if ($proof->getSize() > 10240 * 1024) {
                         throw ValidationException::withMessages(["items.{$idx}.return_proof" => ['Image too large.']]);
                     }
-                    $path = $proof->store('material-requests/return-proofs', 'public');
+                    $stored = ImageNormalizer::store($proof, 'material-requests/return-proofs');
+                    $path = $stored['path'];
                     if ($firstPath === null) {
                         $firstPath = $path;
                     }
                     $item->proofs()->create([
                         'type' => 'return',
                         'path' => $path,
-                        'name' => $proof->getClientOriginalName(),
-                        'mime' => $proof->getMimeType(),
+                        'name' => $stored['name'],
+                        'mime' => $stored['mime'],
                         'sort_order' => $pIdx,
                     ]);
                 }

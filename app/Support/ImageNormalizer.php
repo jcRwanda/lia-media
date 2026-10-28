@@ -2,8 +2,8 @@
 
 namespace App\Support;
 
+use App\Storage\ObjectStorage;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -17,25 +17,32 @@ class ImageNormalizer
 
     public const QUALITY = 82;
 
-    /** @return array{path: string, name: string, mime: string} */
-    public static function store(UploadedFile $file, string $dir, string $disk): array
+    /**
+     * Store an uploaded photo in the private object storage (R2), re-encoded as JPEG when possible.
+     *
+     * @return array{path: string, name: string, mime: string}
+     */
+    public static function store(UploadedFile $file, string $dir, ?ObjectStorage $storage = null): array
     {
+        $storage ??= app(ObjectStorage::class);
+        $dir = trim($dir, '/');
         $original = $file->getClientOriginalName() ?: 'photo';
         $jpeg = self::toJpeg($file->getRealPath());
 
         if ($jpeg !== null) {
-            $path = trim($dir, '/').'/'.Str::random(40).'.jpg';
-            Storage::disk($disk)->put($path, $jpeg);
+            $path = $dir.'/'.Str::random(40).'.jpg';
+            $storage->put($path, $jpeg, 'image/jpeg');
             $base = pathinfo($original, PATHINFO_FILENAME) ?: 'photo';
 
             return ['path' => $path, 'name' => $base.'.jpg', 'mime' => 'image/jpeg'];
         }
 
-        return [
-            'path' => $file->store($dir, $disk),
-            'name' => $original,
-            'mime' => $file->getMimeType() ?: 'application/octet-stream',
-        ];
+        $mime = $file->getMimeType() ?: 'application/octet-stream';
+        $ext = strtolower($file->guessExtension() ?: $file->getClientOriginalExtension() ?: 'bin');
+        $path = $dir.'/'.Str::random(40).'.'.$ext;
+        $storage->put($path, (string) file_get_contents($file->getRealPath()), $mime);
+
+        return ['path' => $path, 'name' => $original, 'mime' => $mime];
     }
 
     public static function toJpeg(string|false $path): ?string

@@ -6,9 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\EquipmentItem;
 use App\Services\MaterialRequestService;
 use App\Support\ImageNormalizer;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Validator;
 
 class EquipmentItemController extends Controller
@@ -157,7 +157,7 @@ class EquipmentItemController extends Controller
     /** @return array{path: string, name: string, mime: string} */
     private function storeFile(UploadedFile $file): array
     {
-        return ImageNormalizer::store($file, 'material-requests/equipment', 'public');
+        return ImageNormalizer::store($file, 'material-requests/equipment');
     }
 
     public function destroy(Request $request, EquipmentItem $equipmentItem): JsonResponse

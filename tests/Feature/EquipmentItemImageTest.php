@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\EquipmentItem;
 use App\Models\User;
+use App\Storage\ObjectStorage;
 use App\Support\ImageNormalizer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -35,7 +36,8 @@ class EquipmentItemImageTest extends TestCase
         $this->assertCount(3, $item->images);
         $this->assertNotNull($item->photo_path);
         foreach ($item->images as $image) {
-            Storage::disk('public')->assertExists($image->path);
+            $this->assertNotNull(app(ObjectStorage::class)->head($image->path), 'image must be in object storage');
+            Storage::disk('public')->assertMissing($image->path);
         }
     }
 
@@ -89,7 +91,37 @@ class EquipmentItemImageTest extends TestCase
         $this->assertSame('image/jpeg', $image->mime);
         $this->assertSame('big.jpg', $image->name);
         $this->assertStringEndsWith('.jpg', $image->path);
-        [$w, $h] = getimagesizefromstring(Storage::disk('public')->get($image->path));
+        [$w, $h] = getimagesizefromstring(app(ObjectStorage::class)->objects[$image->path]['body']);
         $this->assertSame(ImageNormalizer::MAX_EDGE, max($w, $h));
+    }
+
+    public function test_listing_returns_urls_for_images_in_object_storage(): void
+    {
+        Storage::fake('public');
+        $storekeeper = User::factory()->create(['role' => 'storekeeper']);
+        $this->actingAs($storekeeper)->post('/api/equipment-items', [
+            'name' => 'Speed light', 'total_qty' => 1,
+            'photos' => [UploadedFile::fake()->create('a.jpg', 100, 'image/jpeg')],
+        ], ['Accept' => 'application/json'])->assertCreated();
+
+        $url = $this->actingAs($storekeeper)->getJson('/api/equipment-items')->assertOk()->json('items.0.images.0.url');
+        $this->assertNotEmpty($url);
+    }
+
+    public function test_migrate_command_copies_local_public_files_into_object_storage(): void
+    {
+        Storage::fake('public');
+        $item = EquipmentItem::factory()->create();
+        $path = 'material-requests/equipment/legacy.jpg';
+        Storage::disk('public')->put($path, 'jpeg-bytes');
+        $item->update(['photo_path' => $path]);
+        $item->images()->create(['path' => $path, 'name' => 'image.jpg', 'mime' => 'image/jpeg', 'sort_order' => 0]);
+
+        $this->assertNull(app(ObjectStorage::class)->head($path));
+        $this->artisan('media:migrate-local-images')->assertSuccessful();
+        $this->assertSame('jpeg-bytes', app(ObjectStorage::class)->objects[$path]['body']);
+
+        // idempotent
+        $this->artisan('media:migrate-local-images')->expectsOutputToContain('copied=0 already_present=1')->assertSuccessful();
     }
 }
