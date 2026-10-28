@@ -45,6 +45,7 @@ export default function MaterialRequestsPage() {
                     <select value={status} onChange={(e) => setStatus(e.target.value)} className="border rounded px-2 py-1 text-sm">
                         <option value="">All statuses</option>
                         <option value="submitted">Submitted</option>
+                        <option value="changes_requested">Changes requested</option>
                         <option value="approved">Approved</option>
                         <option value="rejected">Rejected</option>
                         <option value="issued">Issued</option>

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex">
+    <title>Request status - {{ config('app.name') }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 text-gray-900">
+<main class="max-w-2xl mx-auto p-4 space-y-4">
+    <h1 class="text-xl font-semibold">Equipment request status / Aho ubusabe bugeze</h1>
+    <div id="box" class="bg-white border rounded p-4">Loading…</div>
+    <div id="edit" class="bg-white border rounded p-4 space-y-3 hidden"></div>
+    <div id="history" class="bg-white border rounded p-4 hidden"></div>
+</main>
+<script>
+(() => {
+    const uuid = @json(request()->route('uuid'));
+    const api = '/api/v1/material-requests/status/' + uuid;
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const labels = {
+        submitted: ['Waiting for review', 'bg-yellow-100 text-yellow-800'],
+        changes_requested: ['Changes requested', 'bg-orange-100 text-orange-800'],
+        approved: ['Approved', 'bg-green-100 text-green-800'],
+        rejected: ['Not approved', 'bg-red-100 text-red-800'],
+        issued: ['Equipment issued', 'bg-blue-100 text-blue-800'],
+        returned: ['Returned', 'bg-gray-100 text-gray-800'],
+        closed: ['Closed', 'bg-gray-100 text-gray-800'],
+    };
+    function render(r) {
+        const [label, cls] = labels[r.status] || [r.status, 'bg-gray-100'];
+        const d = r.decision || {};
+        let html = `<div class="flex items-center justify-between"><div class="font-mono">${esc(r.reference_code)}</div><span class="px-2 py-1 rounded text-sm ${cls}">${esc(label)}</span></div>
+            <div class="text-sm text-gray-600 mt-1">${esc(r.full_name)} · ${esc(r.needed_from)} → ${esc(r.return_by)}</div>`;
+        if (r.review_note) {
+            html += `<div class="mt-3 p-3 rounded bg-gray-50 border text-sm"><b>${r.status === 'rejected' ? 'Reason' : 'Note from LIA'}:</b> ${esc(r.review_note)}</div>`;
+        }
+        if (d.storekeeper) {
+            html += `<div class="mt-3 text-sm">Pick-up contact: <b>${esc(d.storekeeper.name)}</b> (${esc(d.storekeeper.phone)})</div>`;
+            if (d.storekeeper.whatsapp_url) {
+                html += `<a href="${esc(d.storekeeper.whatsapp_url)}" target="_blank" rel="noopener" class="inline-block mt-2 px-4 py-2 rounded bg-green-600 text-white text-sm">Message the storekeeper on WhatsApp</a>`;
+            }
+        }
+        html += '<table class="w-full text-sm mt-3"><thead><tr class="text-left text-gray-500"><th>Item</th><th>Requested</th><th>Approved</th></tr></thead><tbody>'
+            + r.items.map(i => `<tr class="border-t"><td class="py-1">${esc(i.name)}</td><td>${esc(i.qty_requested)}</td><td>${esc(i.qty_approved ?? '-')}</td></tr>`).join('')
+            + '</tbody></table>';
+        $('box').innerHTML = html;
+
+        $('history').classList.toggle('hidden', !r.history?.length);
+        $('history').innerHTML = '<div class="font-medium mb-2">History</div>' + (r.history || []).map(h =>
+            `<div class="text-sm border-t py-1"><span class="text-gray-500">${esc(new Date(h.created_at).toLocaleString())}</span> · ${esc((labels[h.to_status] || [h.to_status])[0])} <span class="text-gray-500">by ${esc(h.actor)}</span>${h.note ? `<div class="text-gray-700">${esc(h.note)}</div>` : ''}</div>`).join('');
+
+        const edit = $('edit');
+        if (!d.can_resubmit) { edit.classList.add('hidden'); return; }
+        edit.classList.remove('hidden');
+        edit.innerHTML = `<div class="font-medium">Edit and resubmit / Hindura wongere wohereze</div>
+            <div class="grid grid-cols-2 gap-2">
+                <label class="text-sm">Pick-up date<input type="date" id="e-from" value="${esc(r.needed_from)}" class="w-full border rounded p-2"></label>
+                <label class="text-sm">Return by<input type="date" id="e-to" value="${esc(r.return_by)}" class="w-full border rounded p-2"></label>
+            </div>
+            <label class="text-sm block">Purpose / project<textarea id="e-purpose" class="w-full border rounded p-2" rows="3">${esc(r.purpose_project_description)}</textarea></label>
+            <div class="text-sm font-medium">Items (set 0 to remove)</div>
+            ${r.items.map(i => `<div class="flex items-center gap-2 text-sm"><span class="flex-1">${esc(i.name)}</span><input type="number" min="0" data-item="${i.equipment_item_id}" value="${esc(i.qty_requested)}" class="w-20 border rounded p-1"></div>`).join('')}
+            <label class="text-sm block">Message to the team (optional)<textarea id="e-note" class="w-full border rounded p-2" rows="2"></textarea></label>
+            <div id="e-err" class="text-sm text-red-600"></div>
+            <button id="e-submit" class="px-4 py-2 rounded bg-black text-white text-sm">Resubmit request</button>`;
+        $('e-submit').onclick = async () => {
+            const items = [...edit.querySelectorAll('[data-item]')].map(el => ({ equipment_item_id: +el.dataset.item, qty: +el.value })).filter(i => i.qty > 0);
+            $('e-err').textContent = '';
+            $('e-submit').disabled = true;
+            try {
+                const res = await fetch(api + '/resubmit', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                    body: JSON.stringify({ needed_from: $('e-from').value, return_by: $('e-to').value, purpose_project_description: $('e-purpose').value || null, items, note: $('e-note').value || null }) });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    const first = data.errors ? Object.values(data.errors)[0] : null;
+                    $('e-err').textContent = (first && first[0]) || data.message || 'Could not resubmit.';
+                    return;
+                }
+                render(data.request);
+            } finally { const b = $('e-submit'); if (b) b.disabled = false; }
+        };
+    }
+    fetch(api, { headers: { Accept: 'application/json' } }).then(r => r.ok ? r.json() : Promise.reject()).then(d => render(d.request))
+        .catch(() => { $('box').textContent = 'Request not found.'; });
+})();
+</script>
+</body>
+</html>

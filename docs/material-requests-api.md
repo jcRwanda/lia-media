@@ -449,3 +449,58 @@ The hosted page and legacy browser routes remain available:
 
 Platform clients should prefer the strict endpoints above. Direct/hosted submissions are labelled
 `Direct/Hosted form` in staff source tabs so they are easy to separate from API clients.
+
+## Admin decisions, status page and webhook decision fields
+
+Statuses: `submitted` → (`approved` | `rejected` | `changes_requested`) → `issued` → `returned` → `closed`.
+`changes_requested` goes back to `submitted` when the requester resubmits. Only `approved`/`issued`
+requests reach the storekeeper portal, reserve stock, and match QR booking lookups.
+
+Staff endpoints (session, `material-requests.manage`):
+
+- `POST /api/material-requests/{id}/approve` — `note` optional.
+- `POST /api/material-requests/{id}/reject` — `note` **required** (the reason). Allowed from `submitted` or `changes_requested`.
+- `POST /api/material-requests/{id}/request-changes` — `note` **required** (what to change).
+
+Every transition is stored in `status_history` (from, to, note, actor, time) and returned by `GET /api/material-requests/{id}`.
+
+Public requester endpoints (no key; the uuid in the link is the secret):
+
+- Page: `GET /request-status/{uuid}` — status, note/reason, storekeeper WhatsApp button when approved, edit form when changes are requested.
+- `GET /api/v1/material-requests/status/{uuid}` — JSON for the page.
+- `POST /api/v1/material-requests/status/{uuid}/resubmit` — only when `changes_requested`; body:
+  `needed_from`, `return_by`, `items[] {equipment_item_id, qty}`, optional `purpose_project_description`, `note`.
+
+`POST /submit` and `POST /status` responses now include `status_url`.
+
+### Webhook (`material_request.status_changed`) — new fields
+
+```json
+{
+  "status": "approved",
+  "previous_status": "submitted",
+  "review_note": "Pick up at 9am",
+  "status_url": "https://media.loveinarts.com/request-status/9b1c…",
+  "decision": {
+    "status": "approved",
+    "reason": null,
+    "note": "Pick up at 9am",
+    "changes_requested": null,
+    "decided_at": "2026-10-28T11:40:00+02:00",
+    "can_resubmit": false,
+    "status_url": "https://media.loveinarts.com/request-status/9b1c…",
+    "storekeeper": {
+      "name": "Jean Store",
+      "phone": "+250 781 111 222",
+      "whatsapp_url": "https://wa.me/250781111222?text=Hello%20Jean%20Store%2C%20my%20equipment%20request%20MR-…"
+    }
+  }
+}
+```
+
+- `decision.reason` is set for `rejected`; `decision.changes_requested` (and `can_resubmit: true`) for `changes_requested` — send the requester to `status_url` to edit.
+- `decision.storekeeper` is present only for `approved`/`issued`. Its contact comes from Settings
+  (`storekeeper_whatsapp`, `storekeeper_contact_name`) or, if empty, the first active storekeeper user with a profile phone.
+  Local Rwandan numbers (07…) are converted to `250…` for wa.me. It is `null` if no number is configured.
+- A webhook is also sent on resubmission (`previous_status: "changes_requested"`, `status: "submitted"`).
+- The requester also gets an email (if mail is configured) with the note/reason, the WhatsApp button and the status link.

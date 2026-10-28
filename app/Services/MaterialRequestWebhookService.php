@@ -75,6 +75,9 @@ class MaterialRequestWebhookService
             'needed_from' => $request->needed_from?->format('Y-m-d'),
             'return_by' => $request->return_by?->format('Y-m-d'),
             'updated_at' => $request->updated_at?->toIso8601String(),
+            'review_note' => $request->review_note,
+            'decision' => app(MaterialRequestDecisionService::class)->decision($request),
+            'status_url' => app(MaterialRequestDecisionService::class)->statusUrl($request),
             'items' => $request->items->map(fn ($item) => [
                 'equipment_item_id' => $item->equipment_item_id,
                 'name' => $item->equipmentItem?->name,

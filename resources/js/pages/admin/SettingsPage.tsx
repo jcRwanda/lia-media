@@ -23,6 +23,8 @@ const schema = z.object({
     default_album_name: z.string().min(1).max(120),
     default_album_uuid: z.string(),
     daily_galleries_enabled: z.boolean(),
+    storekeeper_whatsapp: z.string().max(40).optional().or(z.literal('')).nullable(),
+    storekeeper_contact_name: z.string().max(120).optional().or(z.literal('')).nullable(),
     gallery_timezone: z.string().min(1),
 });
 type FormIn = z.input<typeof schema>;
@@ -83,6 +85,8 @@ export default function SettingsPage() {
                             </Field>
                             <Field label="Default album name (if created)" error={e.default_album_name?.message}><Input {...form.register('default_album_name')} /></Field>
                         </div>
+                        <Field label="Storekeeper WhatsApp (shown to approved requesters; empty = storekeeper profile phone)"><Input {...form.register('storekeeper_whatsapp')} placeholder="+250 78x xxx xxx" /></Field>
+                        <Field label="Storekeeper contact name"><Input {...form.register('storekeeper_contact_name')} /></Field>
                         <Field label="Gallery timezone" error={e.gallery_timezone?.message}><Input {...form.register('gallery_timezone')} placeholder="Africa/Kigali" /></Field>
                         <div className="flex items-center gap-3"><Button type="submit" disabled={save.isPending}>Save settings</Button>{saved ? <span role="status" className="text-xs text-emerald-700">{saved}</span> : null}</div>
                     </CardContent>

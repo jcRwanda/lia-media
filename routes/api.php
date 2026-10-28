@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\DerivativeController;
 use App\Http\Controllers\Api\EquipmentBlockController;
 use App\Http\Controllers\Api\EquipmentCalendarController;
 use App\Http\Controllers\Api\EquipmentItemController;
+use App\Http\Controllers\Api\EquipmentQrController;
 use App\Http\Controllers\Api\LookupController;
 use App\Http\Controllers\Api\MaterialRequestAvailabilityController;
 use App\Http\Controllers\Api\MaterialRequestController;
@@ -19,10 +20,10 @@ use App\Http\Controllers\Api\MaterialRequestPublicController;
 use App\Http\Controllers\Api\PublicationController;
 use App\Http\Controllers\Api\PublicShareController;
 use App\Http\Controllers\Api\ReviewController;
+use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\ShareLinkController;
 use App\Http\Controllers\Api\StorekeeperController;
-use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\TaxonomyController;
 use App\Http\Controllers\Api\UploadController;
 use App\Http\Controllers\Api\UserController;
@@ -36,6 +37,8 @@ Route::middleware(['material.cors', 'throttle:api'])->prefix('v1/material-reques
     Route::get('/config', [MaterialRequestPublicController::class, 'config']);
     Route::post('/submit', [MaterialRequestPublicController::class, 'store'])->middleware('throttle:api');
     Route::post('/status', [MaterialRequestPublicController::class, 'status'])->middleware('throttle:api');
+    Route::get('/status/{uuid}', [MaterialRequestPublicController::class, 'statusByUuid'])->whereUuid('uuid');
+    Route::post('/status/{uuid}/resubmit', [MaterialRequestPublicController::class, 'resubmit'])->whereUuid('uuid')->middleware('throttle:material-prefill');
     Route::get('/prefill', [MaterialRequestPrefillController::class, 'token'])->middleware('throttle:material-prefill');
     Route::post('/prefill/start', [MaterialRequestPrefillController::class, 'startOtp'])->middleware('throttle:material-prefill');
     Route::post('/prefill/verify', [MaterialRequestPrefillController::class, 'verifyOtp'])->middleware('throttle:material-prefill');
@@ -58,8 +61,8 @@ Route::middleware(['material.cors', 'material.client', 'throttle:api'])->prefix(
 
 // Equipment QR (borrower pickup confirmation, no staff session).
 Route::middleware('throttle:material-prefill')->prefix('v1/qr/{token}')->where(['token' => '[A-Za-z0-9]{20,40}'])->group(function () {
-    Route::get('/', [\App\Http\Controllers\Api\EquipmentQrController::class, 'publicShow'])->withoutMiddleware('throttle:material-prefill')->middleware('throttle:share');
-    Route::post('/confirm', [\App\Http\Controllers\Api\EquipmentQrController::class, 'confirm']);
+    Route::get('/', [EquipmentQrController::class, 'publicShow'])->withoutMiddleware('throttle:material-prefill')->middleware('throttle:share');
+    Route::post('/confirm', [EquipmentQrController::class, 'confirm']);
 });
 
 // Visitor share endpoints (no staff session).
@@ -199,6 +202,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
         Route::middleware('can:material-requests.manage')->group(function () {
             Route::post('/material-requests/{materialRequest}/approve', [MaterialRequestController::class, 'approve']);
             Route::post('/material-requests/{materialRequest}/reject', [MaterialRequestController::class, 'reject']);
+            Route::post('/material-requests/{materialRequest}/request-changes', [MaterialRequestController::class, 'requestChanges']);
             Route::post('/material-requests/{materialRequest}/final-work/accept', [MaterialRequestController::class, 'acceptFinalWork']);
             Route::post('/material-requests/{materialRequest}/final-work/request-changes', [MaterialRequestController::class, 'requestFinalWorkChanges']);
         });
@@ -215,8 +219,8 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
         });
         Route::middleware('can:material-requests.issue')->group(function () {
             Route::get('/store/dashboard', [StorekeeperController::class, 'dashboard']);
-            Route::get('/equipment-scan/{token}', [\App\Http\Controllers\Api\EquipmentQrController::class, 'scan'])->where('token', '[A-Za-z0-9]{20,40}');
-            Route::post('/equipment-scan/{token}/check', [\App\Http\Controllers\Api\EquipmentQrController::class, 'check'])->where('token', '[A-Za-z0-9]{20,40}');
+            Route::get('/equipment-scan/{token}', [EquipmentQrController::class, 'scan'])->where('token', '[A-Za-z0-9]{20,40}');
+            Route::post('/equipment-scan/{token}/check', [EquipmentQrController::class, 'check'])->where('token', '[A-Za-z0-9]{20,40}');
         });
 
         // Equipment inventory
