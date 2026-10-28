@@ -143,6 +143,11 @@ class MaterialRequest extends Model
         return $this->belongsTo(User::class, 'closed_by');
     }
 
+    public function statusHistories(): HasMany
+    {
+        return $this->hasMany(MaterialRequestStatusHistory::class)->orderBy('id');
+    }
+
     public function audits(): HasMany
     {
         return $this->hasMany(MaterialRequestAudit::class);

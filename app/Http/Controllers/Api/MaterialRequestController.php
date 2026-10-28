@@ -7,10 +7,12 @@ use App\Mail\MaterialRequestIssuedMail;
 use App\Mail\MaterialRequestReturnedMail;
 use App\Mail\MaterialRequestStatusMail;
 use App\Models\ApiClient;
+use App\Models\EquipmentCheck;
 use App\Models\MaterialRequest;
 use App\Models\MaterialRequestFinalWork;
 use App\Models\MaterialRequestItem;
 use App\Services\MaterialRequestAuditService;
+use App\Services\MaterialRequestDecisionService;
 use App\Services\MaterialRequestService;
 use App\Services\MaterialRequestWebhookService;
 use App\Support\ImageNormalizer;
@@ -29,6 +31,7 @@ class MaterialRequestController extends Controller
         private MaterialRequestAuditService $audit,
         private MaterialRequestService $files,
         private MaterialRequestWebhookService $webhooks,
+        private MaterialRequestDecisionService $decisions,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -106,7 +109,7 @@ class MaterialRequestController extends Controller
             }
         }
 
-        $materialRequest->load(['items.equipmentItem.images', 'items.proofs', 'items.issuedBy:id,name', 'items.receivedBy:id,name', 'audits.actor', 'cohort:id,name,code', 'apiClient:id,name', 'finalWorks', 'finalWorkReviewedBy']);
+        $materialRequest->load(['items.equipmentItem.images', 'items.proofs', 'items.issuedBy:id,name', 'items.receivedBy:id,name', 'audits.actor', 'statusHistories.actor:id,name', 'cohort:id,name,code', 'apiClient:id,name', 'finalWorks', 'finalWorkReviewedBy']);
 
         $payload = $materialRequest->toArray();
         $payload['source'] = $materialRequest->source ?? $materialRequest->apiClient?->name ?? 'Direct/Hosted form';
@@ -118,7 +121,7 @@ class MaterialRequestController extends Controller
             $data = $item->toArray();
             $data['issued_by'] = $item->issuedBy?->name;
             $data['received_by'] = $item->receivedBy?->name;
-            $data['checks'] = \App\Models\EquipmentCheck::query()->with('actor:id,name')
+            $data['checks'] = EquipmentCheck::query()->with('actor:id,name')
                 ->where('material_request_item_id', $item->id)->orderBy('created_at')->get()->map->present()->values()->all();
             $data['issue_proof_urls'] = $item->proofs->where('type', 'issue')
                 ->map(fn ($proof) => $this->files->presign($proof->path, $proof->name))
@@ -151,6 +154,9 @@ class MaterialRequestController extends Controller
             'created_at' => $fw->created_at?->toIso8601String(),
             'download_url' => $fw->file_path ? url('/api/material-requests/'.$materialRequest->id.'/final-work/'.$fw->id.'/file') : null,
         ])->values();
+
+        $payload['status_history'] = $materialRequest->statusHistories->map(fn ($h) => $h->present())->values();
+        $payload['decision'] = $this->decisions->decision($materialRequest);
 
         return response()->json(['request' => $payload]);
     }
@@ -206,6 +212,7 @@ class MaterialRequestController extends Controller
                 }
             }
 
+            $this->decisions->record($materialRequest, 'submitted', 'approved', $materialRequest->review_note, $user);
             $this->audit->log($materialRequest, 'approved', ['note' => $materialRequest->review_note], $user);
         });
 
@@ -226,7 +233,7 @@ class MaterialRequestController extends Controller
             abort(403);
         }
 
-        if (! in_array($materialRequest->status, ['submitted'], true)) {
+        if (! in_array($materialRequest->status, ['submitted', 'changes_requested'], true)) {
             return response()->json(['message' => 'Invalid state transition'], 422);
         }
 
@@ -238,7 +245,8 @@ class MaterialRequestController extends Controller
             return response()->json(['message' => 'Validation failed', 'errors' => $validator->errors()], 422);
         }
 
-        DB::transaction(function () use ($request, $materialRequest, $validator) {
+        $from = $materialRequest->status;
+        DB::transaction(function () use ($request, $materialRequest, $validator, $from) {
             $user = $request->user();
             $materialRequest->update([
                 'status' => 'rejected',
@@ -253,7 +261,49 @@ class MaterialRequestController extends Controller
                 $item->update(['status' => 'rejected']);
             }
 
+            $this->decisions->record($materialRequest, $from, 'rejected', $materialRequest->review_note, $user);
             $this->audit->log($materialRequest, 'rejected', ['note' => $materialRequest->review_note], $user);
+        });
+
+        $materialRequest->refresh();
+        $this->webhooks->dispatchIfConfigured($materialRequest, $from);
+
+        try {
+            Mail::to($materialRequest->email)->queue(new MaterialRequestStatusMail($materialRequest));
+        } catch (\Throwable $e) {
+        }
+
+        return response()->json(['request' => $materialRequest->load('items.equipmentItem')]);
+    }
+
+    public function requestChanges(Request $request, MaterialRequest $materialRequest): JsonResponse
+    {
+        if (! $request->user()?->canDo('material-requests.manage')) {
+            abort(403);
+        }
+
+        if ($materialRequest->status !== 'submitted') {
+            return response()->json(['message' => 'Invalid state transition'], 422);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'note' => ['required', 'string', 'max:2000'],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['message' => 'Validation failed', 'errors' => $validator->errors()], 422);
+        }
+
+        DB::transaction(function () use ($request, $materialRequest, $validator) {
+            $user = $request->user();
+            $materialRequest->update([
+                'status' => 'changes_requested',
+                'review_note' => $validator->validated()['note'],
+                'reviewed_by' => $user?->id,
+                'reviewed_at' => now(),
+            ]);
+            $this->decisions->record($materialRequest, 'submitted', 'changes_requested', $materialRequest->review_note, $user);
+            $this->audit->log($materialRequest, 'changes_requested', ['note' => $materialRequest->review_note], $user);
         });
 
         $materialRequest->refresh();

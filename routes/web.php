@@ -24,4 +24,5 @@ Route::get('/request-materials', function () {
 })->middleware('material.cors');
 
 // The React SPA handles every non-API path (same origin, Sanctum cookie auth).
-Route::view('/{any?}', 'app')->where('any', '^(?!(api|sanctum|up|request-materials)(/|$)).*$')->name('spa');
+Route::view('/request-status/{uuid}', 'request-status', [])->whereUuid('uuid')->name('request-status');
+Route::view('/{any?}', 'app')->where('any', '^(?!(api|sanctum|up|request-materials|request-status)(/|$)).*$')->name('spa');

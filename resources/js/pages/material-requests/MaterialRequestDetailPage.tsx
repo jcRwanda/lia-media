@@ -92,6 +92,17 @@ export default function MaterialRequestDetailPage() {
         onSuccess: () => qc.invalidateQueries({ queryKey: ['material-request', id] }),
     });
 
+    const [decisionError, setDecisionError] = useState('');
+    const decide = useMutation({
+        mutationFn: async (action: 'reject' | 'request-changes') => {
+            if (!note.trim()) throw new Error(action === 'reject' ? 'A reason is required to reject.' : 'Tell the requester what to change.');
+            return api<any>(`/material-requests/${id}/${action}`, { method: 'POST', json: { note } });
+        },
+        onMutate: () => setDecisionError(''),
+        onError: (e: any) => setDecisionError(e?.message || 'Failed'),
+        onSuccess: () => { setNote(''); qc.invalidateQueries({ queryKey: ['material-request', id] }); },
+    });
+
     if (isLoading || !data) return <div className="p-4">Loading...</div>;
 
     return (
@@ -205,14 +216,35 @@ export default function MaterialRequestDetailPage() {
                 </table>
             </div>
 
-            {data.status === 'submitted' && (
+            {(data.status === 'submitted' || data.status === 'changes_requested') && (
                 <div className="border rounded p-3 space-y-2">
-                    <div className="font-medium">Approve / Reject</div>
-                    <textarea value={note} onChange={(e)=>setNote(e.target.value)} placeholder="Note" className="w-full border rounded p-2 text-sm" />
-                    <div className="flex gap-2">
-                        <button onClick={()=>approve.mutate()} className="px-3 py-1 bg-green-600 text-white rounded text-sm">Approve</button>
-                        <button onClick={()=>reject.mutate()} className="px-3 py-1 bg-red-600 text-white rounded text-sm">Reject</button>
+                    <div className="font-medium">Admin decision</div>
+                    {data.status === 'changes_requested' && <div className="text-sm text-orange-700">Waiting for the requester to edit and resubmit. You can still reject it.</div>}
+                    <textarea value={note} onChange={(e)=>setNote(e.target.value)} placeholder="Note (optional to approve; required to reject or request changes)" className="w-full border rounded p-2 text-sm" />
+                    {decisionError && <div className="text-sm text-red-600">{decisionError}</div>}
+                    <div className="flex flex-wrap gap-2">
+                        {data.status === 'submitted' && <button onClick={()=>approve.mutate()} className="px-3 py-1 bg-green-600 text-white rounded text-sm">Approve</button>}
+                        {data.status === 'submitted' && <button onClick={()=>decide.mutate('request-changes')} className="px-3 py-1 bg-orange-500 text-white rounded text-sm">Request changes</button>}
+                        <button onClick={()=>decide.mutate('reject')} className="px-3 py-1 bg-red-600 text-white rounded text-sm">Reject</button>
                     </div>
+                    {data.decision?.status_url && <div className="text-xs text-neutral-500">Requester status page: <a className="underline" href={data.decision.status_url} target="_blank" rel="noreferrer">{data.decision.status_url}</a></div>}
+                </div>
+            )}
+
+            {Array.isArray(data.status_history) && data.status_history.length > 0 && (
+                <div className="border rounded p-3">
+                    <div className="font-medium mb-2">Status history</div>
+                    <ul className="space-y-1 text-sm">
+                        {data.status_history.map((h: any, i: number) => (
+                            <li key={i} className="border-t pt-1">
+                                <span className="text-neutral-500">{h.created_at ? new Date(h.created_at).toLocaleString() : ''}</span>{' '}
+                                <b className="capitalize">{String(h.to_status).replace('_', ' ')}</b>
+                                {h.from_status ? <span className="text-neutral-500"> (from {String(h.from_status).replace('_', ' ')})</span> : null}
+                                <span className="text-neutral-500"> by {h.actor}</span>
+                                {h.note && <div className="text-neutral-700">{h.note}</div>}
+                            </li>
+                        ))}
+                    </ul>
                 </div>
             )}
 

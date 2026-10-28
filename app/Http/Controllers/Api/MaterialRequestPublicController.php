@@ -14,16 +14,18 @@ use App\Models\MaterialRequestItem;
 use App\Models\User;
 use App\Services\EquipmentAvailabilityService;
 use App\Services\MaterialRequestAuditService;
+use App\Services\MaterialRequestDecisionService;
 use App\Services\MaterialRequestPrefillService;
 use App\Services\MaterialRequestService;
 use App\Services\MaterialRequestWebhookService;
+use App\Storage\ObjectStorage;
+use App\Storage\R2ObjectStorage;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -37,6 +39,7 @@ class MaterialRequestPublicController extends Controller
         private MaterialRequestPrefillService $prefill,
         private EquipmentAvailabilityService $availability,
         private MaterialRequestWebhookService $webhooks,
+        private MaterialRequestDecisionService $decisions,
     ) {}
 
     /**
@@ -381,6 +384,7 @@ class MaterialRequestPublicController extends Controller
             return $materialRequest;
         });
 
+        $this->decisions->record($materialRequest, null, 'submitted', null, null, 'requester');
         $this->audit->log($materialRequest, 'submitted', ['requester_type' => $materialRequest->requester_type], null, 'system');
         $this->webhooks->dispatchIfConfigured($materialRequest);
 
@@ -405,7 +409,116 @@ class MaterialRequestPublicController extends Controller
             'message' => 'Request submitted',
             'reference_code' => $materialRequest->reference_code,
             'status' => $materialRequest->status,
+            'status_url' => $this->decisions->statusUrl($materialRequest),
         ], 201);
+    }
+
+    /** Public decision/status page data, addressed by the unguessable request uuid. */
+    public function statusByUuid(string $uuid): JsonResponse
+    {
+        $mr = MaterialRequest::query()->with(['items.equipmentItem', 'statusHistories'])->where('uuid', $uuid)->first();
+        if (! $mr) {
+            return response()->json(['message' => 'Not found'], 404);
+        }
+
+        return response()->json(['request' => $this->publicStatusPayload($mr)]);
+    }
+
+    /** Requester edits and resubmits after the admin asked for changes. */
+    public function resubmit(Request $request, string $uuid): JsonResponse
+    {
+        $mr = MaterialRequest::query()->with('items')->where('uuid', $uuid)->first();
+        if (! $mr) {
+            return response()->json(['message' => 'Not found'], 404);
+        }
+        if ($mr->status !== 'changes_requested') {
+            return response()->json(['message' => 'This request is not waiting for changes.'], 422);
+        }
+
+        $validated = $request->validate([
+            'needed_from' => ['required', 'date'],
+            'return_by' => ['required', 'date', 'after_or_equal:needed_from'],
+            'purpose_project_description' => ['nullable', 'string', 'max:5000'],
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.equipment_item_id' => ['required', 'integer', 'exists:equipment_items,id'],
+            'items.*.qty' => ['required', 'integer', 'min:1'],
+            'note' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $lines = [];
+        foreach ($validated['items'] as $it) {
+            $id = (int) $it['equipment_item_id'];
+            $lines[$id] = ($lines[$id] ?? 0) + (int) $it['qty'];
+        }
+        if ($mr->requester_type === 'trainee') {
+            $bad = EquipmentItem::query()->whereIn('id', array_keys($lines))
+                ->where(fn ($q) => $q->where('allowed_for_trainees', false)->orWhereNull('allowed_for_trainees'))->exists();
+            if ($bad) {
+                throw ValidationException::withMessages(['items' => ['One or more items are not allowed for trainees.']]);
+            }
+        }
+        $bookingLines = collect($lines)->map(fn ($q, $id) => ['equipment_item_id' => $id, 'qty' => $q])->values()->all();
+        $from = CarbonImmutable::parse($validated['needed_from'])->startOfDay();
+        $to = CarbonImmutable::parse($validated['return_by'])->startOfDay();
+        $this->availability->assertCanBook($bookingLines, $from, $to, $mr->id);
+
+        DB::transaction(function () use ($mr, $validated, $bookingLines) {
+            $mr->update(array_filter([
+                'needed_from' => $validated['needed_from'],
+                'return_by' => $validated['return_by'],
+                'purpose_project_description' => $validated['purpose_project_description'] ?? null,
+            ], fn ($v) => $v !== null) + ['status' => 'submitted']);
+            $mr->items()->delete();
+            foreach ($bookingLines as $l) {
+                MaterialRequestItem::query()->create([
+                    'material_request_id' => $mr->id,
+                    'equipment_item_id' => $l['equipment_item_id'],
+                    'qty_requested' => $l['qty'],
+                    'status' => 'pending',
+                ]);
+            }
+            $this->decisions->record($mr, 'changes_requested', 'submitted', $validated['note'] ?? 'Resubmitted with changes', null, 'requester');
+            $this->audit->log($mr, 'resubmitted', ['note' => $validated['note'] ?? null], null, 'requester');
+        });
+
+        $mr->refresh();
+        $this->webhooks->dispatchIfConfigured($mr, 'changes_requested');
+
+        try {
+            $admins = User::query()->whereIn('role', ['admin', 'management', 'communications'])->get();
+            foreach ($admins as $admin) {
+                if ($admin->email) {
+                    Mail::to($admin->email)->queue(new MaterialRequestAdminNotificationMail($mr));
+                }
+            }
+        } catch (\Throwable $e) {
+            // ignore mail failures
+        }
+
+        return response()->json(['request' => $this->publicStatusPayload($mr->load(['items.equipmentItem', 'statusHistories']))]);
+    }
+
+    private function publicStatusPayload(MaterialRequest $mr): array
+    {
+        return [
+            'reference_code' => $mr->reference_code,
+            'status' => $mr->status,
+            'requester_type' => $mr->requester_type,
+            'full_name' => $mr->full_name,
+            'needed_from' => $mr->needed_from?->format('Y-m-d'),
+            'return_by' => $mr->return_by?->format('Y-m-d'),
+            'purpose_project_description' => $mr->purpose_project_description,
+            'review_note' => $mr->review_note,
+            'decision' => $this->decisions->decision($mr),
+            'history' => $mr->statusHistories->map(fn ($h) => $h->present(false))->values(),
+            'items' => $mr->items->map(fn ($item) => [
+                'equipment_item_id' => $item->equipment_item_id,
+                'name' => $item->equipmentItem?->name,
+                'qty_requested' => $item->qty_requested,
+                'qty_approved' => $item->qty_approved,
+                'status' => $item->status,
+            ])->values(),
+        ];
     }
 
     /**
@@ -449,6 +562,7 @@ class MaterialRequestPublicController extends Controller
                 'requester_type' => $materialRequest->requester_type,
                 'full_name' => $materialRequest->full_name,
                 'review_note' => $materialRequest->review_note,
+                'status_url' => $this->decisions->statusUrl($materialRequest),
                 'needed_from' => $materialRequest->needed_from?->format('Y-m-d'),
                 'return_by' => $materialRequest->return_by?->format('Y-m-d'),
                 'items' => $materialRequest->items->map(fn ($item) => [
@@ -557,10 +671,10 @@ class MaterialRequestPublicController extends Controller
         $key = 'material-requests/final-work/'.$materialRequest->id.'/'.Str::uuid().($ext ? '.'.$ext : '');
         $disk = 'r2';
         try {
-            $storage = app(\App\Storage\ObjectStorage::class);
+            $storage = app(ObjectStorage::class);
             if (! empty($data['size'])) {
                 $signed = $storage->presignPut($key, $data['content_type'], (int) $data['size'], 600);
-            } elseif ($storage instanceof \App\Storage\R2ObjectStorage) {
+            } elseif ($storage instanceof R2ObjectStorage) {
                 $client = $storage->client();
                 $cmd = $client->getCommand('PutObject', [
                     'Bucket' => config('media.r2.bucket') ?? env('R2_BUCKET'),
@@ -575,6 +689,7 @@ class MaterialRequestPublicController extends Controller
             $headers = $signed['headers'];
         } catch (\Throwable $e) {
             report($e);
+
             return response()->json(['message' => 'Unable to generate upload URL'], 500);
         }
 

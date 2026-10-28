@@ -26,6 +26,9 @@ class SettingsService
         'equipment_closed_weekdays' => [],       // 0 (Sunday) to 6 (Saturday)
         'equipment_max_booking_days' => 30,      // inclusive length of a booking
         'equipment_lead_time_days' => 0,         // minimum days between today and pick-up
+        // Contact shown to approved requesters (WhatsApp). Empty = first active storekeeper with a profile phone.
+        'storekeeper_whatsapp' => '',
+        'storekeeper_contact_name' => '',
     ];
 
     public function all(): array

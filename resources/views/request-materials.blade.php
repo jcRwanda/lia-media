@@ -793,6 +793,7 @@
             signaturePad.resize();
             updateTypeUi();
             show('success', 'Request submitted. / Ubusabe bwoherejwe. Reference: ' + (data.reference_code || ''));
+            if (data.status_url) { const box = document.createElement('a'); box.href = data.status_url; box.target = '_blank'; box.className = 'block mt-2 underline text-sm'; box.textContent = 'Track your request / Kurikirana ubusabe bwawe'; $('success').appendChild(box); }
         } catch (e) {
             genericError('The request could not be submitted. Please check your connection and try again.');
         } finally {

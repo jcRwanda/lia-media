@@ -49,6 +49,8 @@ class SettingsController extends Controller
             'default_album_name' => ['sometimes', 'string', 'max:120'],
             'default_album_uuid' => ['sometimes', 'nullable', 'string', Rule::exists('albums', 'uuid')->whereNull('deleted_at')],
             'daily_galleries_enabled' => ['sometimes', 'boolean'],
+            'storekeeper_whatsapp' => ['sometimes', 'nullable', 'string', 'max:40'],
+            'storekeeper_contact_name' => ['sometimes', 'nullable', 'string', 'max:120'],
             'gallery_timezone' => ['sometimes', 'string', Rule::in(timezone_identifiers_list())],
         ]);
         $this->settings->put($d);
