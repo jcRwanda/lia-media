@@ -36,6 +36,13 @@ class EquipmentItem extends Model
         return rtrim((string) config('app.url'), '/').'/q/'.$this->qr_token;
     }
 
+    /** Related items that usually go with this one (e.g. camera → battery, charger, lens). */
+    public function accessories(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(EquipmentItem::class, 'equipment_item_accessories', 'equipment_item_id', 'accessory_id')
+            ->withTimestamps()->orderBy('name');
+    }
+
     public function checks(): HasMany
     {
         return $this->hasMany(EquipmentCheck::class);

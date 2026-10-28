@@ -49,6 +49,9 @@ class EquipmentItemController extends Controller
             'photos.*' => ['nullable', 'file', 'mimes:'.self::IMAGE_MIMES, 'max:'.self::MAX_KB],
             'images' => ['nullable', 'array'],
             'images.*' => ['nullable', 'file', 'mimes:'.self::IMAGE_MIMES, 'max:'.self::MAX_KB],
+            'accessory_ids' => ['nullable', 'array'],
+            'accessory_ids.*' => ['integer', 'exists:equipment_items,id'],
+            'sync_accessories' => ['nullable', 'boolean'],
         ]);
 
         if ($validator->fails()) {
@@ -56,7 +59,7 @@ class EquipmentItemController extends Controller
         }
 
         $data = $validator->validated();
-        unset($data['photo'], $data['photos'], $data['images']);
+        unset($data['photo'], $data['photos'], $data['images'], $data['accessory_ids'], $data['sync_accessories']);
 
         if ($request->hasFile('photo')) {
             $data['photo_path'] = $this->storeFile($request->file('photo'))['path'];
@@ -65,6 +68,7 @@ class EquipmentItemController extends Controller
         $item = EquipmentItem::query()->create($data);
 
         $this->storeImages($request, $item);
+        $this->syncAccessories($request, $item);
 
         return response()->json(['item' => $this->present($item->load('images'))], 201);
     }
@@ -97,6 +101,9 @@ class EquipmentItemController extends Controller
             'photos.*' => ['nullable', 'file', 'mimes:'.self::IMAGE_MIMES, 'max:'.self::MAX_KB],
             'images' => ['nullable', 'array'],
             'images.*' => ['nullable', 'file', 'mimes:'.self::IMAGE_MIMES, 'max:'.self::MAX_KB],
+            'accessory_ids' => ['nullable', 'array'],
+            'accessory_ids.*' => ['integer', 'exists:equipment_items,id'],
+            'sync_accessories' => ['nullable', 'boolean'],
         ]);
 
         if ($validator->fails()) {
@@ -104,7 +111,7 @@ class EquipmentItemController extends Controller
         }
 
         $data = $validator->validated();
-        unset($data['photo'], $data['photos'], $data['images']);
+        unset($data['photo'], $data['photos'], $data['images'], $data['accessory_ids'], $data['sync_accessories']);
 
         if (array_key_exists('serial_number', $data)
             && (string) ($data['serial_number'] ?? '') !== (string) ($equipmentItem->serial_number ?? '')
@@ -124,8 +131,19 @@ class EquipmentItemController extends Controller
 
         $equipmentItem->update($data);
         $this->storeImages($request, $equipmentItem);
+        $this->syncAccessories($request, $equipmentItem);
 
         return response()->json(['item' => $this->present($equipmentItem->fresh()->load('images'))]);
+    }
+
+    private function syncAccessories(Request $request, EquipmentItem $item): void
+    {
+        if (! $request->has('accessory_ids') && ! $request->boolean('sync_accessories')) {
+            return;
+        }
+        $ids = collect((array) $request->input('accessory_ids', []))->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0 && $id !== $item->id)->unique()->values()->all();
+        $item->accessories()->sync($ids);
     }
 
     private function storeImages(Request $request, EquipmentItem $item): void
@@ -191,6 +209,9 @@ class EquipmentItemController extends Controller
         $payload['can_edit_serial'] = (bool) $user?->canDo('equipment.edit_serial');
         $payload['can_delete'] = (bool) $user?->canDo('equipment.delete');
         $payload['photo_url'] = $this->files->presign($item->photo_path, 'equipment-'.$item->id);
+        $accessories = $item->accessories()->get(['equipment_items.id', 'equipment_items.name', 'equipment_items.allowed_for_trainees']);
+        $payload['accessory_ids'] = $accessories->pluck('id')->values()->all();
+        $payload['accessories'] = $accessories->map(fn ($a) => ['id' => $a->id, 'name' => $a->name, 'allowed_for_trainees' => (bool) $a->allowed_for_trainees])->values()->all();
         $payload['images'] = $item->images->map(fn ($image) => [
             'id' => $image->id,
             'name' => $image->name,

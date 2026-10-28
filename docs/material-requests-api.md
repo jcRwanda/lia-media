@@ -65,7 +65,11 @@ Cohorts are also available directly in `options.cohorts`.
 
 ### `GET /catalog?type=client|trainee|alumni`
 
-Returns requestable equipment with its total stock. For `type=trainee`, only items with `allowed_for_trainees=true` are returned. Each item always includes `allowed_for_trainees`.
+Returns requestable equipment with its total stock. For `type=trainee`, only items with `allowed_for_trainees=true` are returned, and each item's `accessories` list only contains trainee-allowed accessories. Each item always includes `allowed_for_trainees`.
+
+- `photo_url`: main image (short-lived signed URL, refetch the catalog rather than caching it for hours).
+- `image_urls`: **every** image of the item, in display order. Use it for a gallery/lightbox.
+- `accessories`: related items staff linked to this one (e.g. camera → battery, charger, lens). Each accessory is itself an `id` in the same catalog, so a portal can show a reminder such as *"Don't forget: Battery, Charger, Lens"* with one-click "add" buttons when the parent item is selected. Accessories that are not in the returned catalog (e.g. not trainee-allowed) are omitted.
 
 ```json
 {
@@ -77,9 +81,29 @@ Returns requestable equipment with its total stock. For `type=trainee`, only ite
       "condition": "good",
       "available_qty": 4,
       "allowed_for_trainees": true,
-      "photo_path": "material-requests/equipment/..."
+      "photo_path": "material-requests/equipment/...",
+      "photo_url": "https://...signed...",
+      "image_urls": ["https://...signed-1...", "https://...signed-2..."],
+      "accessories": [
+        { "id": 14, "name": "LP-E6NH battery", "allowed_for_trainees": true },
+        { "id": 15, "name": "RF 24-105mm lens", "allowed_for_trainees": true }
+      ]
     }
   ]
+}
+```
+
+`GET /form-schema?type=...` also includes a `catalog` array with exactly the same item shape (filtered the same way by `type`), so a portal can render the whole form, accessory reminders and image galleries from one call.
+
+Suggested reminder logic (JavaScript):
+
+```js
+const byId = new Map(catalog.map((i) => [i.id, i]));
+function reminders(selectedIds) {
+  return selectedIds.flatMap((id) => {
+    const missing = (byId.get(id)?.accessories || []).filter((a) => byId.has(a.id) && !selectedIds.includes(a.id));
+    return missing.length ? [{ for: byId.get(id).name, missing }] : [];
+  });
 }
 ```
 

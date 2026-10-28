@@ -110,8 +110,17 @@
         <fieldset class="rounded-xl border border-neutral-200 bg-white p-4">
             <legend class="px-1 text-sm font-semibold">{{ $label('items')['en'] }} / {{ $label('items')['kn'] }} *</legend>
             <input id="item-search" type="search" placeholder="Search equipment / Shakisha ibikoresho" class="mt-2 w-full rounded-lg border p-2 text-sm">
+            <div id="accessory-reminders" class="mt-3 hidden space-y-2 text-sm"></div>
             <div id="items-list" class="mt-3 space-y-2 text-sm"><p class="text-neutral-500">Loading catalog...</p></div>
         </fieldset>
+
+        <div id="lightbox" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/90 p-4" role="dialog" aria-modal="true">
+            <button type="button" id="lb-close" class="absolute right-4 top-4 rounded-full bg-white/20 px-3 py-1 text-2xl text-white" aria-label="Close">&times;</button>
+            <button type="button" id="lb-prev" class="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-white/20 px-3 py-2 text-3xl text-white" aria-label="Previous">&#8249;</button>
+            <img id="lb-img" alt="" class="max-h-[85vh] max-w-full select-none rounded object-contain">
+            <button type="button" id="lb-next" class="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-white/20 px-3 py-2 text-3xl text-white" aria-label="Next">&#8250;</button>
+            <div id="lb-caption" class="absolute bottom-4 left-0 right-0 text-center text-sm text-white"></div>
+        </div>
 
         <fieldset class="rounded-xl border border-neutral-200 bg-white p-4">
             <legend class="px-1 text-sm font-semibold">Dates / Amatariki</legend>
@@ -277,6 +286,7 @@
     }
 
     function updateTypeUi() {
+        if (catalogType !== null && type() !== catalogType) loadCatalog();
         const alumniType = type() === 'trainee' || type() === 'alumni';
         $('cohort-wrap').classList.toggle('hidden', !alumniType);
         $('cohort-required').classList.toggle('hidden', !alumniType);
@@ -390,23 +400,108 @@
         }
     }
 
+    let catalogType = null;
+    const selected = new Map(); // id -> qty
+
     async function loadCatalog() {
-        const box = $('items-list');
+        catalogType = type();
         try {
-            const res = await fetch('/api/v1/material-requests/catalog', { headers: { Accept: 'application/json' } });
+            const res = await fetch('/api/v1/material-requests/catalog?type=' + encodeURIComponent(catalogType), { headers: { Accept: 'application/json' } });
             const data = await res.json();
             catalog = data.items || [];
         } catch (e) {
             catalog = [];
         }
-        renderCatalog('');
+        const ids = new Set(catalog.map((i) => i.id));
+        Array.from(selected.keys()).forEach((id) => { if (!ids.has(id)) selected.delete(id); });
+        renderCatalog($('item-search') ? $('item-search').value : '');
+    }
+
+    // ---- Lightbox ----
+    const lb = { images: [], index: 0, name: '' };
+    function lbShow() {
+        $('lb-img').src = lb.images[lb.index];
+        $('lb-img').alt = lb.name;
+        $('lb-caption').textContent = lb.name + (lb.images.length > 1 ? '  ·  ' + (lb.index + 1) + ' / ' + lb.images.length : '');
+        const multi = lb.images.length > 1;
+        $('lb-prev').style.display = multi ? '' : 'none';
+        $('lb-next').style.display = multi ? '' : 'none';
+    }
+    function openLightbox(images, name, start) {
+        if (!images || !images.length) return;
+        lb.images = images; lb.index = start || 0; lb.name = name;
+        $('lightbox').classList.remove('hidden');
+        $('lightbox').classList.add('flex');
+        lbShow();
+    }
+    function closeLightbox() {
+        $('lightbox').classList.add('hidden');
+        $('lightbox').classList.remove('flex');
+    }
+    function lbStep(d) { lb.index = (lb.index + d + lb.images.length) % lb.images.length; lbShow(); }
+    function setupLightbox() {
+        $('lb-close').addEventListener('click', closeLightbox);
+        $('lb-prev').addEventListener('click', (e) => { e.stopPropagation(); lbStep(-1); });
+        $('lb-next').addEventListener('click', (e) => { e.stopPropagation(); lbStep(1); });
+        $('lightbox').addEventListener('click', (e) => { if (e.target.id === 'lightbox') closeLightbox(); });
+        document.addEventListener('keydown', (e) => {
+            if ($('lightbox').classList.contains('hidden')) return;
+            if (e.key === 'Escape') closeLightbox();
+            if (e.key === 'ArrowLeft') lbStep(-1);
+            if (e.key === 'ArrowRight') lbStep(1);
+        });
+        let x0 = null;
+        $('lightbox').addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+        $('lightbox').addEventListener('touchend', (e) => {
+            if (x0 === null) return;
+            const dx = e.changedTouches[0].clientX - x0;
+            if (Math.abs(dx) > 40) lbStep(dx < 0 ? 1 : -1);
+            x0 = null;
+        });
+    }
+
+    function itemImages(item) {
+        return (item.image_urls && item.image_urls.length) ? item.image_urls : (item.photo_url ? [item.photo_url] : []);
+    }
+
+    function renderReminders() {
+        const box = $('accessory-reminders');
+        box.innerHTML = '';
+        const byId = new Map(catalog.map((i) => [i.id, i]));
+        let any = false;
+        selected.forEach((_qty, id) => {
+            const item = byId.get(id);
+            if (!item || !item.accessories || !item.accessories.length) return;
+            const missing = item.accessories.filter((a) => byId.has(a.id) && !selected.has(a.id));
+            if (!missing.length) return;
+            any = true;
+            const div = document.createElement('div');
+            div.className = 'rounded-lg border border-amber-200 bg-amber-50 p-2 text-amber-900';
+            const p = document.createElement('p');
+            p.textContent = 'Don\'t forget (' + item.name + '): ' + missing.map((a) => a.name).join(', ');
+            div.appendChild(p);
+            const btns = document.createElement('div');
+            btns.className = 'mt-1 flex flex-wrap gap-1';
+            missing.forEach((a) => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'rounded-full border border-amber-300 bg-white px-2 py-0.5 text-xs';
+                b.textContent = '+ Add ' + a.name;
+                b.addEventListener('click', () => { selected.set(a.id, 1); renderCatalog($('item-search').value); });
+                btns.appendChild(b);
+            });
+            div.appendChild(btns);
+            box.appendChild(div);
+        });
+        box.classList.toggle('hidden', !any);
     }
 
     function renderCatalog(search) {
         const box = $('items-list');
         box.innerHTML = '';
-        const q = search.toLowerCase();
-        const rows = catalog.filter((item) => !q || item.name.toLowerCase().includes(q) || (item.category || '').toLowerCase().includes(q));
+        const q = (search || '').toLowerCase();
+        const rows = catalog.filter((item) => !q || selected.has(item.id) || item.name.toLowerCase().includes(q) || (item.category || '').toLowerCase().includes(q));
+        renderReminders();
         if (!rows.length) {
             const p = document.createElement('p');
             p.className = 'text-neutral-500';
@@ -415,24 +510,61 @@
             return;
         }
         rows.forEach((item) => {
-            const row = document.createElement('label');
-            row.className = 'flex items-center gap-3 rounded-lg border border-neutral-200 p-2';
+            const row = document.createElement('div');
+            row.className = 'flex items-center gap-3 rounded-lg border border-neutral-200 p-2' + (selected.has(item.id) ? ' border-blue-300 bg-blue-50' : '');
             const check = document.createElement('input');
             check.type = 'checkbox';
             check.className = 'item-check rounded border';
             check.value = String(item.id);
-            const name = document.createElement('span');
-            name.className = 'flex-1';
+            check.checked = selected.has(item.id);
+            check.id = 'item-' + item.id;
+            const imgs = itemImages(item);
+            let thumb;
+            if (imgs.length) {
+                thumb = document.createElement('button');
+                thumb.type = 'button';
+                thumb.className = 'relative h-12 w-12 shrink-0 overflow-hidden rounded border';
+                thumb.title = 'View photos';
+                const img = document.createElement('img');
+                img.src = imgs[0]; img.alt = item.name; img.loading = 'lazy';
+                img.className = 'h-full w-full object-cover';
+                thumb.appendChild(img);
+                if (imgs.length > 1) {
+                    const n = document.createElement('span');
+                    n.className = 'absolute bottom-0 right-0 bg-black/60 px-1 text-[10px] text-white';
+                    n.textContent = imgs.length;
+                    thumb.appendChild(n);
+                }
+                thumb.addEventListener('click', () => openLightbox(imgs, item.name, 0));
+            } else {
+                thumb = document.createElement('span');
+                thumb.className = 'h-12 w-12 shrink-0 rounded border bg-neutral-100';
+            }
+            const name = document.createElement('label');
+            name.className = 'flex-1 cursor-pointer';
+            name.htmlFor = check.id;
             name.textContent = item.name + (item.category ? ' — ' + item.category : '') + ' (available: ' + item.available_qty + ')';
+            if (item.accessories && item.accessories.length) {
+                const acc = document.createElement('span');
+                acc.className = 'block text-xs text-neutral-500';
+                acc.textContent = 'Goes with: ' + item.accessories.map((a) => a.name).join(', ');
+                name.appendChild(acc);
+            }
             const qty = document.createElement('input');
             qty.type = 'number';
             qty.min = '1';
-            qty.value = '1';
+            qty.value = String(selected.get(item.id) || 1);
             qty.required = true;
             qty.className = 'item-qty w-20 rounded-lg border p-1';
-            qty.disabled = true;
-            check.addEventListener('change', () => { qty.disabled = !check.checked; });
+            qty.disabled = !check.checked;
+            check.addEventListener('change', () => {
+                if (check.checked) selected.set(item.id, Math.max(1, Number(qty.value) || 1));
+                else selected.delete(item.id);
+                renderCatalog($('item-search').value);
+            });
+            qty.addEventListener('input', () => { if (selected.has(item.id)) selected.set(item.id, Math.max(1, Number(qty.value) || 1)); });
             row.appendChild(check);
+            row.appendChild(thumb);
             row.appendChild(name);
             row.appendChild(qty);
             box.appendChild(row);
@@ -590,21 +722,7 @@
     }
 
     function collectItems() {
-        const items = [];
-        document.querySelectorAll('#items-list .item-check:checked').forEach((check) => {
-            const qty = check.closest('label').querySelector('.item-qty');
-            items.push({ equipment_item_id: Number(check.value), qty: Math.max(1, Number(qty.value) || 1) });
-        });
-        return items;
-    }
-
-    function fileToDataUri(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-        });
+        return Array.from(selected.entries()).map(([id, qty]) => ({ equipment_item_id: id, qty: Math.max(1, Number(qty) || 1) }));
     }
 
     function validateForm(items) {
@@ -708,11 +826,13 @@
         setupProjectLocationToggle();
         setupPrefillOtp();
         form.addEventListener('submit', submitForm);
+        setupLightbox();
         $('item-search').addEventListener('input', (event) => renderCatalog(event.target.value));
         updateTypeUi();
         await Promise.all([loadDivisions(), loadCatalog(), loadCohorts()]);
         await loadSignedPrefill();
         updateTypeUi();
+        if (type() !== catalogType) await loadCatalog();
     });
 })();
 </script>
