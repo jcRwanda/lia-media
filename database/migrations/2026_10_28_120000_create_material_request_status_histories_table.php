@@ -9,6 +9,8 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // A first deploy attempt created the table but failed on the index name; start clean.
+        Schema::dropIfExists('material_request_status_histories');
         Schema::create('material_request_status_histories', function (Blueprint $table) {
             $table->id();
             $table->foreignId('material_request_id')->constrained()->cascadeOnDelete();
@@ -18,7 +20,7 @@ return new class extends Migration
             $table->foreignId('actor_id')->nullable()->constrained('users')->nullOnDelete();
             $table->string('actor_type', 20)->default('user');
             $table->timestamp('created_at')->nullable();
-            $table->index(['material_request_id', 'created_at']);
+            $table->index(['material_request_id', 'created_at'], 'mr_status_hist_req_created_idx');
         });
 
         // Existing requests keep their current status; seed one history row so the timeline is never empty.
