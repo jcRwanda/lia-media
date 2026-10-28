@@ -3,6 +3,7 @@ import { api, fieldErrors } from '@/lib/api';
 import { compressImages } from '@/lib/images';
 import { CategorySelect } from '@/components/CategorySelect';
 import { ProofUploader } from '@/components/ProofUploader';
+import { ImageLightbox } from '@/components/ImageLightbox';
 import { Badge, Card, CardContent, CardHeader, CardTitle, EmptyState, PageHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,6 +30,8 @@ interface EquipmentItem {
     qr_url?: string | null;
     can_edit_serial?: boolean;
     can_delete?: boolean;
+    accessory_ids?: number[];
+    accessories?: { id: number; name: string }[];
 }
 
 interface EquipmentForm {
@@ -40,12 +43,14 @@ interface EquipmentForm {
     total_qty: string;
     allowed_for_trainees: boolean;
     files: File[];
+    accessory_ids: number[];
 }
 
 const emptyForm: EquipmentForm = {
     name: '',
     category: '',
     serial_number: '',
+    accessory_ids: [],
     asset_tag: '',
     condition: '',
     total_qty: '0',
@@ -69,6 +74,8 @@ async function formToData(form: EquipmentForm): Promise<FormData> {
     data.append('condition', form.condition);
     data.append('total_qty', form.total_qty || '0');
     data.append('allowed_for_trainees', form.allowed_for_trainees ? '1' : '0');
+    data.append('sync_accessories', '1');
+    form.accessory_ids.forEach((id) => data.append('accessory_ids[]', String(id)));
     const files = await compressImages(form.files);
     files.forEach((file, index) => data.append(`photos[${index}]`, file));
 
@@ -82,6 +89,7 @@ export default function EquipmentInventoryPage() {
     const [editForm, setEditForm] = useState<EquipmentForm>(emptyForm);
     const [filterTrainee, setFilterTrainee] = useState(false);
     const [error, setError] = useState('');
+    const [lightbox, setLightbox] = useState<{ images: string[]; start: number; title: string } | null>(null);
 
     const { data, isLoading } = useQuery({
         queryKey: ['equipment-items'],
@@ -149,6 +157,7 @@ export default function EquipmentInventoryPage() {
             condition: item.condition || '',
             total_qty: String(item.total_qty),
             allowed_for_trainees: !!item.allowed_for_trainees,
+            accessory_ids: item.accessory_ids || [],
             files: [],
         });
     };
@@ -172,6 +181,7 @@ export default function EquipmentInventoryPage() {
                 }
             />
 
+            {lightbox ? <ImageLightbox images={lightbox.images} start={lightbox.start} title={lightbox.title} onClose={() => setLightbox(null)} /> : null}
             {error ? <div className="whitespace-pre-line rounded-lg border border-red-200 bg-red-50 p-2 text-sm text-red-700">{error}</div> : null}
 
             <Card>
@@ -191,6 +201,7 @@ export default function EquipmentInventoryPage() {
                         <input type="checkbox" checked={form.allowed_for_trainees} onChange={(e) => setForm({ ...form, allowed_for_trainees: e.target.checked })} />
                         Allowed for trainees
                     </label>
+                    <AccessoryPicker all={data || []} selfId={null} value={form.accessory_ids} onChange={(accessory_ids) => setForm({ ...form, accessory_ids })} />
                     <ProofUploader
                         label="Equipment images"
                         required={false}
@@ -253,6 +264,12 @@ export default function EquipmentInventoryPage() {
                                         />
                                         Allowed for trainees
                                     </label>
+                                    <AccessoryPicker
+                                        all={data || []}
+                                        selfId={item.id}
+                                        value={editForm.accessory_ids}
+                                        onChange={(accessory_ids) => setEditForm({ ...editForm, accessory_ids })}
+                                    />
                                     <ProofUploader
                                         label="Add equipment images"
                                         required={false}
@@ -284,17 +301,26 @@ export default function EquipmentInventoryPage() {
                                     </div>
                                     {item.images.length > 0 ? (
                                         <div className="flex flex-wrap gap-2">
-                                            {item.images.map((image) => (
-                                                <a key={image.id} href={image.url || '#'} target="_blank" rel="noreferrer">
+                                            {item.images.map((image, idx) => (
+                                                <button
+                                                    type="button"
+                                                    key={image.id}
+                                                    onClick={() => setLightbox({ images: item.images.map((im) => im.url).filter(Boolean) as string[], start: idx, title: item.name })}
+                                                >
                                                     <img src={image.url || ''} alt={image.name || item.name} className="h-16 w-16 rounded-lg border object-cover" />
-                                                </a>
+                                                </button>
                                             ))}
                                         </div>
                                     ) : item.photo_url ? (
-                                        <img src={item.photo_url} alt={item.name} className="h-16 w-16 rounded-lg border object-cover" />
+                                        <button type="button" onClick={() => setLightbox({ images: [item.photo_url!], start: 0, title: item.name })}>
+                                            <img src={item.photo_url} alt={item.name} className="h-16 w-16 rounded-lg border object-cover" />
+                                        </button>
                                     ) : (
                                         <p className="text-xs text-neutral-400">No photos yet.</p>
                                     )}
+                                    {item.accessories?.length ? (
+                                        <p className="text-xs text-neutral-500">Goes with: {item.accessories.map((a) => a.name).join(', ')}</p>
+                                    ) : null}
                                     <div className="flex flex-wrap gap-2">
                                         <Button size="sm" variant="secondary" onClick={() => startEdit(item)}>
                                             Edit item
@@ -325,3 +351,27 @@ export default function EquipmentInventoryPage() {
     );
 }
 
+
+function AccessoryPicker({ all, selfId, value, onChange }: { all: EquipmentItem[]; selfId: number | null; value: number[]; onChange: (ids: number[]) => void }) {
+    const [q, setQ] = useState('');
+    const options = all.filter((it) => it.id !== selfId);
+    const shown = options.filter((it) => value.includes(it.id) || !q || it.name.toLowerCase().includes(q.toLowerCase()));
+    const toggle = (id: number) => onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
+
+    return (
+        <div className="space-y-1 rounded-lg border p-2 text-sm">
+            <div className="font-medium">Accessories (reminded when this item is requested)</div>
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search items, e.g. battery, charger, lens" />
+            <div className="max-h-40 space-y-1 overflow-y-auto">
+                {shown.map((it) => (
+                    <label key={it.id} className="flex items-center gap-2 text-xs">
+                        <input type="checkbox" checked={value.includes(it.id)} onChange={() => toggle(it.id)} />
+                        {it.name}
+                        {it.category ? <span className="text-neutral-400">· {it.category}</span> : null}
+                    </label>
+                ))}
+                {shown.length === 0 ? <p className="text-xs text-neutral-400">No other items.</p> : null}
+            </div>
+        </div>
+    );
+}

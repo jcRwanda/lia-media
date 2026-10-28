@@ -51,18 +51,42 @@ class MaterialRequestPublicController extends Controller
             $query->where('allowed_for_trainees', true);
         }
 
-        $items = $query->get()
-            ->map(fn (EquipmentItem $item) => [
-                'id' => $item->id,
-                'name' => $item->name,
-                'category' => $item->category,
-                'condition' => $item->condition,
-                'available_qty' => $item->total_qty,
-                'allowed_for_trainees' => (bool) $item->allowed_for_trainees,
-                'photo_path' => $item->photo_path,
-            ]);
+        $trainee = $type === 'trainee';
+        $items = $query->with(['images', 'accessories'])->get()
+            ->map(fn (EquipmentItem $item) => self::catalogEntry($item, $this->files, $trainee));
 
         return response()->json(['items' => $items]);
+    }
+
+    /**
+     * Public catalog entry: all image URLs plus linked accessories (trainee catalogs only list trainee-allowed accessories).
+     */
+    public static function catalogEntry(EquipmentItem $item, MaterialRequestService $files, bool $trainee = false): array
+    {
+        $images = $item->images->map(fn ($image) => $files->presign($image->path, $image->name))->filter()->values();
+        $photo = $files->presign($item->photo_path, 'equipment-'.$item->id);
+        if ($images->isEmpty() && $photo) {
+            $images = collect([$photo]);
+        }
+
+        return [
+            'id' => $item->id,
+            'name' => $item->name,
+            'category' => $item->category,
+            'condition' => $item->condition,
+            'available_qty' => $item->total_qty,
+            'allowed_for_trainees' => (bool) $item->allowed_for_trainees,
+            'photo_path' => $item->photo_path,
+            'photo_url' => $photo ?? $images->first(),
+            'image_urls' => $images->all(),
+            'accessories' => $item->accessories
+                ->filter(fn (EquipmentItem $a) => ! $trainee || $a->allowed_for_trainees)
+                ->map(fn (EquipmentItem $a) => [
+                    'id' => $a->id,
+                    'name' => $a->name,
+                    'allowed_for_trainees' => (bool) $a->allowed_for_trainees,
+                ])->values()->all(),
+        ];
     }
 
     /**

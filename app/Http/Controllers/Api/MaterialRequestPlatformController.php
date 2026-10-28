@@ -10,7 +10,7 @@ use Illuminate\Validation\Rule;
 
 class MaterialRequestPlatformController extends Controller
 {
-    public function __construct(private MaterialRequestFormSchemaService $schemas) {}
+    public function __construct(private MaterialRequestFormSchemaService $schemas, private \App\Services\MaterialRequestService $files) {}
 
     public function schema(Request $request): JsonResponse
     {
@@ -21,6 +21,14 @@ class MaterialRequestPlatformController extends Controller
         $schema = $this->schemas->build($data['type'] ?? 'client');
         $schema['field_sets'] = config('material-requests.field_sets');
         $schema['trainee_fields'] = config('material-requests.field_sets.trainee', []);
+
+        // Catalog with every image URL and linked accessories, so portals can show reminders + galleries.
+        $trainee = ($data['type'] ?? 'client') === 'trainee';
+        $schema['catalog'] = \App\Models\EquipmentItem::query()->orderBy('name')
+            ->when($trainee, fn ($q) => $q->where('allowed_for_trainees', true))
+            ->with(['images', 'accessories'])->get()
+            ->map(fn ($item) => MaterialRequestPublicController::catalogEntry($item, $this->files, $trainee))
+            ->values();
 
         return response()->json($schema);
     }
