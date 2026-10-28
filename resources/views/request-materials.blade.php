@@ -18,18 +18,63 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Request Materials / Equipment - LIA</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = { theme: { extend: {
+            colors: { lia: { 50: '#fdf2f2', 100: '#fbe3e3', 200: '#f5c2c2', 500: '#d23a3a', 600: '#b91c1c', 700: '#991b1b' } },
+            fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+        } } };
+    </script>
+    <style>
+        body { font-family: Inter, system-ui, sans-serif; }
+        #mr-form { counter-reset: step; }
+        #mr-form input:not([type=checkbox]):not([type=file]):not([type=hidden]), #mr-form select, #mr-form textarea {
+            border: 1px solid #e5e7eb; border-radius: .75rem; padding: .65rem .8rem; background: #fff; font-size: .95rem; transition: border-color .15s, box-shadow .15s;
+        }
+        #mr-form input:focus, #mr-form select:focus, #mr-form textarea:focus { outline: none; border-color: #d23a3a; box-shadow: 0 0 0 3px #fbe3e3; }
+        #mr-form input[type=checkbox] { accent-color: #b91c1c; width: 1.1rem; height: 1.1rem; }
+        #mr-form input[type=file] { border: 1px dashed #f5c2c2; border-radius: .75rem; padding: .6rem; background: #fdf2f2; }
+        #mr-form input[type=date] { min-height: 2.9rem; font-weight: 500; color: #111827; }
+        #mr-form input[type=date]::-webkit-calendar-picker-indicator { filter: invert(19%) sepia(85%) saturate(3000%) hue-rotate(350deg); cursor: pointer; }
+        #mr-form > fieldset, #mr-form > label { border-radius: 1.25rem !important; border-color: #f1e4e4 !important; box-shadow: 0 1px 2px rgba(17,24,39,.04), 0 8px 24px -16px rgba(153,27,27,.25); padding: 1.25rem !important; }
+        #mr-form > fieldset > legend { counter-increment: step; display: flex; align-items: center; gap: .55rem; font-size: .95rem; font-weight: 700; color: #111827; padding: 0 .4rem; }
+        #mr-form > fieldset > legend::before { content: counter(step); display: inline-grid; place-items: center; width: 1.7rem; height: 1.7rem; border-radius: 999px; background: #b91c1c; color: #fff; font-size: .8rem; font-weight: 700; }
+        .lia-item { transition: border-color .15s, background .15s, box-shadow .15s; }
+        .lia-item.is-selected { border-color: #d23a3a !important; background: #fdf2f2; box-shadow: 0 0 0 3px #fbe3e3; }
+        .lia-steps a.is-active { background: #b91c1c; color: #fff; border-color: #b91c1c; }
+    </style>
 </head>
-<body class="bg-neutral-50 text-neutral-900 antialiased">
-<div class="mx-auto max-w-3xl p-4 sm:p-6">
-    <div class="mb-6">
-        <h1 class="text-2xl font-semibold">Material / Equipment Request</h1>
-        <p class="text-sm text-neutral-600">Gusaba ibikoresho &middot; {{ $types[$type]['en'] }} / {{ $types[$type]['kn'] }}</p>
+<body class="min-h-screen bg-gradient-to-b from-lia-50 via-white to-white text-neutral-900 antialiased">
+<header class="bg-lia-600 text-white">
+    <div class="mx-auto flex max-w-3xl items-center gap-3 px-4 py-4 sm:px-6">
+        <img src="{{ asset('images/lia-logo-white.jpg') }}" alt="Love in Arts" class="h-11 w-11 rounded-xl bg-white object-contain p-0.5 shadow">
+        <div class="min-w-0">
+            <p class="text-xs font-medium uppercase tracking-wider text-lia-100">Love in Arts · LIA Media</p>
+            <p class="truncate text-sm font-semibold">Equipment desk / Ububiko bw'ibikoresho</p>
+        </div>
+    </div>
+</header>
+<div class="mx-auto max-w-3xl p-4 pb-16 sm:p-6">
+    <div class="mb-5">
+        <span class="inline-flex items-center rounded-full bg-lia-100 px-3 py-1 text-xs font-semibold text-lia-700">{{ $types[$type]['en'] }} / {{ $types[$type]['kn'] }}</span>
+        <h1 class="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">Material / Equipment Request</h1>
+        <p class="mt-1 text-sm text-neutral-600">Gusaba ibikoresho &middot; Fill each section below, pick your equipment and sign. / Uzuza buri gice, hitamo ibikoresho maze usinye.</p>
+    </div>
+    <nav id="lia-steps" class="lia-steps sticky top-0 z-30 -mx-4 mb-5 flex gap-2 overflow-x-auto border-b border-lia-100 bg-white/90 px-4 py-2 text-xs font-medium backdrop-blur sm:mx-0 sm:rounded-2xl sm:border" aria-label="Sections"></nav>
+    <div class="hidden">
     </div>
 
-    <div id="notice" class="mb-4 hidden rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800"></div>
-    <div id="error" class="mb-4 hidden rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"></div>
-    <div id="success" class="mb-4 hidden rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800"></div>
+    <div id="notice" class="mb-4 hidden rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800"></div>
+    <div id="error" class="mb-4 hidden rounded-xl border border-lia-200 bg-lia-50 p-3 text-sm font-medium text-lia-700" role="alert"></div>
+    <div id="success-screen" class="hidden rounded-3xl border border-lia-100 bg-white p-8 text-center shadow-xl shadow-lia-100/60">
+        <div class="mx-auto grid h-16 w-16 place-items-center rounded-full bg-green-100 text-3xl text-green-600">&#10003;</div>
+        <h2 class="mt-4 text-2xl font-bold">Request submitted!</h2>
+        <p class="mt-1 text-sm text-neutral-600">Ubusabe bwawe bwoherejwe. We'll review it and contact you soon. / Tuzabusuzuma tukumenyeshe vuba.</p>
+        <div id="success" class="mx-auto mt-5 hidden max-w-md rounded-2xl bg-lia-50 p-4 text-sm font-medium text-lia-700 [&>a]:mt-3 [&>a]:inline-flex [&>a]:rounded-xl [&>a]:bg-lia-600 [&>a]:px-5 [&>a]:py-3 [&>a]:font-semibold [&>a]:text-white [&>a]:no-underline"></div>
+        <button type="button" onclick="window.location.reload()" class="mt-5 text-sm font-semibold text-lia-700 underline underline-offset-4">Submit another request / Ohereza ubundi busabe</button>
+    </div>
 
     <form id="mr-form" class="space-y-5" enctype="multipart/form-data" novalidate>
         <input type="hidden" name="requester_type" id="requester_type" value="{{ $type }}">
@@ -52,13 +97,13 @@
                     <input name="project_name" required maxlength="255" class="mt-1 w-full rounded-lg border p-2">
                 </label>
             </div>
-            <div class="mt-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
-                <button type="button" id="start-prefill" class="text-sm font-medium text-sky-700 underline">Use my last request details / Koresha amakuru y'ubusabe bwa nyuma</button>
+            <div class="mt-4 rounded-xl border border-lia-100 bg-lia-50/60 p-3">
+                <button type="button" id="start-prefill" class="text-sm font-semibold text-lia-700 underline underline-offset-4">Use my last request details / Koresha amakuru y'ubusabe bwa nyuma</button>
                 <div id="prefill-otp" class="mt-3 hidden space-y-2">
                     <p id="prefill-sent" class="text-xs text-neutral-600"></p>
                     <div class="flex flex-wrap gap-2">
                         <input id="prefill-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" class="w-32 rounded-lg border p-2 text-sm">
-                        <button type="button" id="verify-prefill" class="rounded-lg bg-neutral-900 px-3 py-2 text-sm text-white">Verify / Emeza</button>
+                        <button type="button" id="verify-prefill" class="rounded-xl bg-lia-600 px-4 py-2 text-sm font-semibold text-white hover:bg-lia-700">Verify / Emeza</button>
                     </div>
                 </div>
             </div>
@@ -109,9 +154,10 @@
 
         <fieldset class="rounded-xl border border-neutral-200 bg-white p-4">
             <legend class="px-1 text-sm font-semibold">{{ $label('items')['en'] }} / {{ $label('items')['kn'] }} *</legend>
-            <input id="item-search" type="search" placeholder="Search equipment / Shakisha ibikoresho" class="mt-2 w-full rounded-lg border p-2 text-sm">
+            <input id="item-search" type="search" placeholder="&#128269; Search equipment / Shakisha ibikoresho" class="mt-2 w-full rounded-lg border p-2 text-sm">
+            <div id="selected-chips" class="mt-3 hidden flex-wrap gap-2"></div>
             <div id="accessory-reminders" class="mt-3 hidden space-y-2 text-sm"></div>
-            <div id="items-list" class="mt-3 space-y-2 text-sm"><p class="text-neutral-500">Loading catalog...</p></div>
+            <div id="items-list" class="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2"><p class="text-neutral-500">Loading catalog...</p></div>
         </fieldset>
 
         <div id="lightbox" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/90 p-4" role="dialog" aria-modal="true">
@@ -192,18 +238,18 @@
         <fieldset class="rounded-xl border border-neutral-200 bg-white p-4">
             <legend class="px-1 text-sm font-semibold">{{ $label('signature')['en'] }} / {{ $label('signature')['kn'] }} *</legend>
             <p class="mt-1 text-xs text-neutral-500">Sign with your finger or mouse. / Sinye ukoresheje urutoki cyangwa imbeba.</p>
-            <canvas id="signature-pad" class="mt-2 w-full touch-none rounded-lg border border-dashed border-neutral-400 bg-neutral-50" style="height: 170px"></canvas>
+            <canvas id="signature-pad" class="mt-2 w-full touch-none rounded-xl border-2 border-dashed border-lia-200 bg-lia-50/50" style="height: 170px"></canvas>
             <input type="hidden" name="signature" id="signature">
             <div class="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm">
                 <span>Date / Itariki: <strong id="signature-date"></strong></span>
-                <button type="button" id="clear-signature" class="rounded-lg border px-3 py-1">Clear / Siba</button>
+                <button type="button" id="clear-signature" class="rounded-xl border border-lia-200 px-3 py-1.5 font-medium text-lia-700 hover:bg-lia-50">Clear / Siba</button>
             </div>
         </fieldset>
 
         <input type="text" name="{{ config('material-requests.honey_pot_name') }}" class="hidden" tabindex="-1" autocomplete="off">
 
-        <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <button type="submit" id="submit-btn" class="rounded-lg bg-neutral-900 px-5 py-3 text-sm font-medium text-white disabled:opacity-60">Submit Request / Kohereza</button>
+        <div class="sticky bottom-0 z-20 -mx-4 flex flex-col gap-2 border-t border-lia-100 bg-white/95 px-4 py-3 backdrop-blur sm:static sm:mx-0 sm:flex-row sm:items-center sm:border-0 sm:bg-transparent sm:p-0">
+            <button type="submit" id="submit-btn" class="w-full rounded-xl bg-lia-600 px-6 py-3.5 text-base font-semibold text-white shadow-lg shadow-lia-200 transition hover:bg-lia-700 disabled:opacity-60 sm:w-auto">Submit Request / Kohereza</button>
             <span id="submit-note" class="text-xs text-neutral-500"></span>
         </div>
     </form>
@@ -476,24 +522,48 @@
             if (!missing.length) return;
             any = true;
             const div = document.createElement('div');
-            div.className = 'rounded-lg border border-amber-200 bg-amber-50 p-2 text-amber-900';
+            div.className = 'flex gap-3 rounded-xl border-l-4 border-amber-400 bg-amber-50 p-3 text-amber-900';
+            const icon = document.createElement('span'); icon.className = 'text-lg leading-none'; icon.textContent = '\u{1F4A1}'; div.appendChild(icon);
+            const body = document.createElement('div'); body.className = 'min-w-0';
             const p = document.createElement('p');
-            p.textContent = 'Don\'t forget (' + item.name + '): ' + missing.map((a) => a.name).join(', ');
-            div.appendChild(p);
+            p.innerHTML = '<strong>Don\'t forget / Ntiwibagirwe</strong> — ' ; p.appendChild(document.createTextNode(item.name + ' works with: ' + missing.map((a) => a.name).join(', ')));
+            body.appendChild(p);
             const btns = document.createElement('div');
-            btns.className = 'mt-1 flex flex-wrap gap-1';
+            btns.className = 'mt-2 flex flex-wrap gap-1.5';
             missing.forEach((a) => {
                 const b = document.createElement('button');
                 b.type = 'button';
-                b.className = 'rounded-full border border-amber-300 bg-white px-2 py-0.5 text-xs';
+                b.className = 'rounded-full border border-amber-300 bg-white px-3 py-1 text-xs font-semibold hover:bg-amber-100';
                 b.textContent = '+ Add ' + a.name;
                 b.addEventListener('click', () => { selected.set(a.id, 1); renderCatalog($('item-search').value); });
                 btns.appendChild(b);
             });
-            div.appendChild(btns);
+            body.appendChild(btns);
+            div.appendChild(body);
             box.appendChild(div);
         });
         box.classList.toggle('hidden', !any);
+    }
+
+    function renderChips() {
+        const box = $('selected-chips');
+        if (!box) return;
+        box.innerHTML = '';
+        const byId = new Map(catalog.map((i) => [i.id, i]));
+        selected.forEach((qty, id) => {
+            const item = byId.get(id);
+            if (!item) return;
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'inline-flex items-center gap-1.5 rounded-full bg-lia-600 py-1 pl-3 pr-2 text-xs font-semibold text-white';
+            chip.title = 'Remove';
+            chip.textContent = item.name + ' \u00d7' + qty;
+            const x = document.createElement('span'); x.className = 'grid h-4 w-4 place-items-center rounded-full bg-white/25'; x.textContent = '\u2715'; chip.appendChild(x);
+            chip.addEventListener('click', () => { selected.delete(id); renderCatalog($('item-search').value); });
+            box.appendChild(chip);
+        });
+        box.classList.toggle('hidden', selected.size === 0);
+        box.classList.toggle('flex', selected.size > 0);
     }
 
     function renderCatalog(search) {
@@ -502,16 +572,17 @@
         const q = (search || '').toLowerCase();
         const rows = catalog.filter((item) => !q || selected.has(item.id) || item.name.toLowerCase().includes(q) || (item.category || '').toLowerCase().includes(q));
         renderReminders();
+        renderChips();
         if (!rows.length) {
             const p = document.createElement('p');
-            p.className = 'text-neutral-500';
+            p.className = 'text-neutral-500 sm:col-span-2';
             p.textContent = 'No equipment available. / Nta bikoresho bihari.';
             box.appendChild(p);
             return;
         }
         rows.forEach((item) => {
             const row = document.createElement('div');
-            row.className = 'flex items-center gap-3 rounded-lg border border-neutral-200 p-2' + (selected.has(item.id) ? ' border-blue-300 bg-blue-50' : '');
+            row.className = 'lia-item flex items-center gap-3 rounded-2xl border border-neutral-200 bg-white p-3' + (selected.has(item.id) ? ' is-selected' : '');
             const check = document.createElement('input');
             check.type = 'checkbox';
             check.className = 'item-check rounded border';
@@ -523,7 +594,7 @@
             if (imgs.length) {
                 thumb = document.createElement('button');
                 thumb.type = 'button';
-                thumb.className = 'relative h-12 w-12 shrink-0 overflow-hidden rounded border';
+                thumb.className = 'relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-neutral-100 bg-neutral-50';
                 thumb.title = 'View photos';
                 const img = document.createElement('img');
                 img.src = imgs[0]; img.alt = item.name; img.loading = 'lazy';
@@ -531,22 +602,26 @@
                 thumb.appendChild(img);
                 if (imgs.length > 1) {
                     const n = document.createElement('span');
-                    n.className = 'absolute bottom-0 right-0 bg-black/60 px-1 text-[10px] text-white';
+                    n.className = 'absolute bottom-1 right-1 rounded-full bg-black/60 px-1.5 text-[10px] font-semibold text-white';
                     n.textContent = imgs.length;
                     thumb.appendChild(n);
                 }
                 thumb.addEventListener('click', () => openLightbox(imgs, item.name, 0));
             } else {
                 thumb = document.createElement('span');
-                thumb.className = 'h-12 w-12 shrink-0 rounded border bg-neutral-100';
+                thumb.className = 'grid h-16 w-16 shrink-0 place-items-center rounded-xl bg-lia-50 text-2xl'; thumb.textContent = '\u{1F3A5}';
             }
             const name = document.createElement('label');
-            name.className = 'flex-1 cursor-pointer';
+            name.className = 'min-w-0 flex-1 cursor-pointer';
             name.htmlFor = check.id;
-            name.textContent = item.name + (item.category ? ' — ' + item.category : '') + ' (available: ' + item.available_qty + ')';
+            const title = document.createElement('span'); title.className = 'block font-semibold leading-tight text-neutral-900'; title.textContent = item.name; name.appendChild(title);
+            const meta = document.createElement('span'); meta.className = 'mt-1 flex flex-wrap items-center gap-1 text-xs';
+            if (item.category) { const c = document.createElement('span'); c.className = 'rounded-full bg-neutral-100 px-2 py-0.5 text-neutral-600'; c.textContent = item.category; meta.appendChild(c); }
+            const av = document.createElement('span'); av.className = 'rounded-full bg-green-50 px-2 py-0.5 font-medium text-green-700'; av.textContent = 'available: ' + item.available_qty; meta.appendChild(av);
+            name.appendChild(meta);
             if (item.accessories && item.accessories.length) {
                 const acc = document.createElement('span');
-                acc.className = 'block text-xs text-neutral-500';
+                acc.className = 'mt-1 block truncate text-xs text-neutral-500';
                 acc.textContent = 'Goes with: ' + item.accessories.map((a) => a.name).join(', ');
                 name.appendChild(acc);
             }
@@ -555,7 +630,7 @@
             qty.min = '1';
             qty.value = String(selected.get(item.id) || 1);
             qty.required = true;
-            qty.className = 'item-qty w-20 rounded-lg border p-1';
+            qty.className = 'item-qty w-16 rounded-lg border p-1 text-center'; qty.setAttribute('aria-label', 'Quantity');
             qty.disabled = !check.checked;
             check.addEventListener('change', () => {
                 if (check.checked) selected.set(item.id, Math.max(1, Number(qty.value) || 1));
@@ -792,6 +867,7 @@
             form.reset();
             signaturePad.resize();
             updateTypeUi();
+            form.classList.add('hidden'); $('lia-steps').classList.add('hidden'); $('success-screen').classList.remove('hidden'); window.scrollTo({ top: 0, behavior: 'smooth' });
             show('success', 'Request submitted. / Ubusabe bwoherejwe. Reference: ' + (data.reference_code || ''));
             if (data.status_url) { const box = document.createElement('a'); box.href = data.status_url; box.target = '_blank'; box.className = 'block mt-2 underline text-sm'; box.textContent = 'Track your request / Kurikirana ubusabe bwawe'; $('success').appendChild(box); }
         } catch (e) {
@@ -835,6 +911,31 @@
         updateTypeUi();
         if (type() !== catalogType) await loadCatalog();
     });
+})();
+</script>
+<script>
+(function () {
+    const nav = document.getElementById('lia-steps');
+    const sections = Array.from(document.querySelectorAll('#mr-form > fieldset'));
+    sections.forEach((fs, i) => {
+        fs.id = fs.id || 'step-' + (i + 1);
+        fs.style.scrollMarginTop = '4rem';
+        const a = document.createElement('a');
+        a.href = '#' + fs.id;
+        a.className = 'shrink-0 whitespace-nowrap rounded-full border border-lia-100 px-3 py-1.5 text-neutral-700';
+        const text = (fs.querySelector('legend')?.textContent || '').split('/')[0].trim();
+        a.textContent = (i + 1) + '. ' + text;
+        nav.appendChild(a);
+    });
+    if (!('IntersectionObserver' in window)) return;
+    const links = Array.from(nav.querySelectorAll('a'));
+    const io = new IntersectionObserver((entries) => {
+        entries.forEach((e) => {
+            if (!e.isIntersecting) return;
+            links.forEach((l) => l.classList.toggle('is-active', l.getAttribute('href') === '#' + e.target.id));
+        });
+    }, { rootMargin: '-30% 0px -60% 0px' });
+    sections.forEach((s) => io.observe(s));
 })();
 </script>
 </body>
