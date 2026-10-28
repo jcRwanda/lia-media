@@ -14,6 +14,7 @@ interface EquipmentImage {
     id: number;
     name: string | null;
     url: string | null;
+    is_main?: boolean;
 }
 
 interface EquipmentItem {
@@ -147,6 +148,28 @@ export default function EquipmentInventoryPage() {
         onError: (e) => setError(describeError(e, 'Could not save item')),
     });
 
+    const imageAction = useMutation({
+        mutationFn: async (a: { id: number; op: 'order'; ids: number[] } | { id: number; op: 'main' | 'delete'; imageId: number }) => {
+            if (a.op === 'order') return api<{ item: EquipmentItem }>(`/equipment-items/${a.id}/images/order`, { method: 'PUT', json: { ids: a.ids } });
+            if (a.op === 'main') return api<{ item: EquipmentItem }>(`/equipment-items/${a.id}/images/${a.imageId}/main`, { method: 'POST' });
+            return api<{ item: EquipmentItem }>(`/equipment-items/${a.id}/images/${a.imageId}`, { method: 'DELETE' });
+        },
+        onSuccess: (res) => {
+            if (res?.item) qc.setQueryData<EquipmentItem[]>(['equipment-items'], (cur) => cur?.map((it) => (it.id === res.item.id ? res.item : it)));
+            qc.invalidateQueries({ queryKey: ['equipment-items'] });
+            setError('');
+        },
+        onError: (e) => setError(describeError(e, 'Could not update images')),
+    });
+
+    const moveImage = (item: EquipmentItem, idx: number, dir: -1 | 1) => {
+        const ids = item.images.map((im) => im.id);
+        const to = idx + dir;
+        if (to < 0 || to >= ids.length) return;
+        [ids[idx], ids[to]] = [ids[to], ids[idx]];
+        imageAction.mutate({ id: item.id, op: 'order', ids });
+    };
+
     const startEdit = (item: EquipmentItem) => {
         setEditingId(item.id);
         setEditForm({
@@ -270,6 +293,39 @@ export default function EquipmentInventoryPage() {
                                         value={editForm.accessory_ids}
                                         onChange={(accessory_ids) => setEditForm({ ...editForm, accessory_ids })}
                                     />
+                                    {item.images.length > 0 ? (
+                                        <div className="space-y-1.5">
+                                            <div className="text-xs font-medium text-neutral-600">Current images · first one is the main photo</div>
+                                            <div className="flex flex-wrap gap-2">
+                                                {item.images.map((image, idx) => {
+                                                    const main = image.is_main ?? idx === 0;
+                                                    return (
+                                                        <div key={image.id} className={`relative w-24 overflow-hidden rounded-lg border bg-white ${main ? 'border-lia-500 ring-2 ring-lia-200' : 'border-neutral-200'}`}>
+                                                            <img src={image.url || ''} alt={image.name || item.name} className="h-20 w-full object-cover" />
+                                                            {main ? <span className="absolute left-1 top-1 rounded bg-lia-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">Main</span> : null}
+                                                            <div className="flex items-center justify-between gap-0.5 p-1 text-xs">
+                                                                <button type="button" aria-label="Move left" title="Move left" disabled={idx === 0 || imageAction.isPending} onClick={() => moveImage(item, idx, -1)} className="rounded px-1 hover:bg-neutral-100 disabled:opacity-30">←</button>
+                                                                <button type="button" aria-label="Set as main" title="Set as main photo" disabled={main || imageAction.isPending} onClick={() => imageAction.mutate({ id: item.id, op: 'main', imageId: image.id })} className="rounded px-1 text-lia-600 hover:bg-lia-50 disabled:opacity-30">★</button>
+                                                                <button type="button" aria-label="Move right" title="Move right" disabled={idx === item.images.length - 1 || imageAction.isPending} onClick={() => moveImage(item, idx, 1)} className="rounded px-1 hover:bg-neutral-100 disabled:opacity-30">→</button>
+                                                                <button
+                                                                    type="button"
+                                                                    aria-label="Remove image"
+                                                                    title="Remove image"
+                                                                    disabled={imageAction.isPending}
+                                                                    onClick={() => {
+                                                                        if (window.confirm('Remove this image?')) imageAction.mutate({ id: item.id, op: 'delete', imageId: image.id });
+                                                                    }}
+                                                                    className="rounded px-1 text-red-600 hover:bg-red-50 disabled:opacity-30"
+                                                                >
+                                                                    ✕
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    ) : null}
                                     <ProofUploader
                                         label="Add equipment images"
                                         required={false}

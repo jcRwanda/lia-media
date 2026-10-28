@@ -101,9 +101,15 @@ class AuthController extends Controller
         $user = $request->user();
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'max:120'],
-            'phone' => ['sometimes', 'nullable', 'string', 'max:40'],
-            'photo_path' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'phone' => ['sometimes', 'nullable', 'string', 'max:40', function (string $attr, mixed $value, \Closure $fail) {
+                if (trim((string) $value) !== '' && \App\Support\Phone::normalize((string) $value) === null) {
+                    $fail('Enter a valid phone/WhatsApp number, e.g. 0788123456 or +250788123456.');
+                }
+            }],
         ]);
+        if (array_key_exists('phone', $data)) {
+            $data['phone'] = \App\Support\Phone::normalize($data['phone']);
+        }
         $user->fill($data);
         $user->save();
         $this->audit->log('user.profile_updated', $user);
@@ -117,13 +123,11 @@ class AuthController extends Controller
         $request->validate([
             'filename' => ['sometimes', 'string'],
             'content_type' => ['sometimes', 'string'],
-            'photo' => ['sometimes', 'file', 'image', 'max:10240'],
+            'photo' => ['sometimes', 'file', 'mimes:jpg,jpeg,png,webp,gif,heic,heif', 'max:20480'],
         ]);
 
         if ($request->hasFile('photo')) {
-            $file = $request->file('photo');
-            $key = 'profile-photos/'.$user->id.'/'.Str::uuid().'.'.$file->getClientOriginalExtension();
-            $storage->put($key, $file->get(), ['ContentType' => $file->getMimeType()]);
+            $key = \App\Support\ImageNormalizer::store($request->file('photo'), 'profile-photos/'.$user->id, $storage)['path'];
             $user->forceFill(['photo_path' => $key])->save();
             $url = method_exists($storage, 'temporaryUrl') ? $storage->temporaryUrl($key, now()->addMinutes(60)) : null;
             return response()->json(['photo_url' => $url, 'user' => $user->toApi()]);

@@ -8,11 +8,18 @@ import { Button } from '@/components/ui/button';
 import { Card, PageHeader } from '@/components/ui/card';
 import { Field, Input } from '@/components/ui/input';
 import { api, fieldErrors } from '@/lib/api';
+import { compressImage } from '@/lib/images';
+import { isValidPhone } from '@/lib/phone';
 import type { User } from '@/lib/types';
 
 const profileSchema = z.object({
     name: z.string().min(2),
-    phone: z.string().max(40).optional().or(z.literal('')),
+    phone: z
+        .string()
+        .max(40)
+        .optional()
+        .or(z.literal(''))
+        .refine((v) => !v || isValidPhone(v), 'Enter a valid number, e.g. 0788123456 or +250788123456'),
 });
 
 const passwordSchema = z
@@ -43,6 +50,7 @@ export default function ProfilePage() {
         mutationFn: (v: z.infer<typeof profileSchema>) => api<{ user: User }>('/auth/me', { method: 'PATCH', json: { name: v.name, phone: v.phone || null } }),
         onSuccess: (r) => {
             qc.setQueryData(['me'], r.user);
+            profileForm.reset({ name: r.user.name, phone: (r.user as any).phone || '' });
             setProfileMsg('Profile updated');
             setTimeout(() => setProfileMsg(''), 2500);
         },
@@ -70,18 +78,11 @@ export default function ProfilePage() {
     const uploadPhoto = async (file: File) => {
         setPhotoMsg('');
         try {
-            // Try to get presigned upload URL if endpoint exists; otherwise upload directly
-            const res: any = await api('/auth/me/photo', {
-                method: 'POST',
-                json: { filename: file.name, content_type: file.type },
-            }).catch(async () => {
-                // Fallback: direct upload as form data
-                const formData = new FormData();
-                formData.append('photo', file);
-                const r = await fetch('/api/auth/me/photo', { method: 'POST', body: formData, credentials: 'include' });
-                if (!r.ok) throw new Error('Upload failed');
-                return r.json();
-            });
+            // Server re-encodes to JPEG and stores it in R2; shrink first so iPhone photos upload fast.
+            const small = await compressImage(file, 1024, 0.85);
+            const formData = new FormData();
+            formData.append('photo', small);
+            const res = await api<{ photo_url?: string; user?: { photo_url?: string } }>('/auth/me/photo', { method: 'POST', body: formData });
             qc.setQueryData(['me'], (cur: any) => cur ? { ...cur, photo_url: res.photo_url || res.user?.photo_url } : cur);
             refresh();
             setPhotoMsg('Photo updated');
@@ -106,8 +107,9 @@ export default function ProfilePage() {
                         <Field label="Email">
                             <Input value={user.email} disabled />
                         </Field>
-                        <Field label="Phone" error={(profileForm.formState.errors as any).phone?.message}>
-                            <Input {...profileForm.register('phone')} />
+                        <Field label="Phone / WhatsApp" error={(profileForm.formState.errors as any).phone?.message}>
+                            <Input type="tel" inputMode="tel" autoComplete="tel" placeholder="0788 123 456 or +250 788 123 456" {...profileForm.register('phone')} />
+                            <p className="mt-1 text-[11px] text-neutral-500">Used for WhatsApp contact links (e.g. borrowers reaching the storekeeper). Rwandan 07… numbers are saved as +250….</p>
                         </Field>
                         {profileMsg ? <p className="text-xs text-emerald-700">{profileMsg}</p> : null}
                         <Button type="submit" disabled={updateProfile.isPending}>Save profile</Button>
@@ -123,7 +125,7 @@ export default function ProfilePage() {
                             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-neutral-100 text-lg font-semibold">{user.name.charAt(0)}</div>
                         )}
                         <label className="cursor-pointer">
-                            <input type="file" accept="image/*" className="hidden" onChange={(e) => {
+                            <input type="file" accept="image/*,.heic,.heif" className="hidden" onChange={(e) => {
                                 const f = e.target.files?.[0];
                                 if (f) uploadPhoto(f);
                             }} />

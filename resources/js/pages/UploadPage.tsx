@@ -8,11 +8,12 @@ import { Badge, Card, PageHeader } from '@/components/ui/card';
 import { Field, Input, Select } from '@/components/ui/input';
 import { useLookups } from '@/hooks/useLookups';
 import { api, fieldErrors } from '@/lib/api';
+import { convertHeicForArchive } from '@/lib/images';
 import { renditionsFor, uploadRenditions } from '@/lib/derivatives';
 import { uploadFile, type Phase, type UploadContext } from '@/lib/uploader';
 import { cn, formatBytes } from '@/lib/utils';
 
-interface Item { id: string; file: File; phase: Phase; loaded: number; total: number; message?: string; assetUuid?: string; ctrl?: AbortController }
+interface Item { id: string; file: File; phase: Phase; loaded: number; total: number; message?: string; assetUuid?: string; ctrl?: AbortController; converted?: boolean }
 
 const tone: Record<Phase, string> = { queued: 'neutral', hashing: 'blue', uploading: 'blue', finalizing: 'blue', derivatives: 'violet', done: 'green', duplicate: 'amber', error: 'red', paused: 'neutral' };
 const label: Record<Phase, string> = { queued: 'Queued', hashing: 'Checking', uploading: 'Uploading', finalizing: 'Verifying', derivatives: 'Previews', done: 'Done', duplicate: 'Duplicate', error: 'Failed', paused: 'Paused' };
@@ -38,6 +39,12 @@ export default function UploadPage() {
         patch(item.id, { ctrl, phase: 'hashing', message: undefined });
         running.current++;
         try {
+            // iPhone HEIC -> full-resolution JPEG before hashing/presign so previews work everywhere.
+            if (!item.converted) {
+                const converted = await convertHeicForArchive(item.file);
+                item = { ...item, file: converted, converted: true, total: converted.size };
+                patch(item.id, { file: converted, converted: true, total: converted.size });
+            }
             const r = await renditionsFor(item.file);
             const hasVideoMeta = !!r && typeof r === 'object' && 'width' in r && 'height' in r;
             const videoWidth = hasVideoMeta && typeof r.width === 'number' && r.width > 0 ? r.width : undefined;
