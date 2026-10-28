@@ -226,6 +226,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
         // Equipment inventory
         Route::middleware('can:equipment.manage')->group(function () {
             Route::get('/equipment-items', [EquipmentItemController::class, 'index']);
+            Route::get('/equipment-labels/pdf', [\App\Http\Controllers\Api\EquipmentLabelController::class, 'pdf']);
             Route::post('/equipment-items', [EquipmentItemController::class, 'store']);
             Route::get('/equipment-items/{equipmentItem}', [EquipmentItemController::class, 'show']);
             Route::get('/equipment-calendar', [EquipmentCalendarController::class, 'index']);
