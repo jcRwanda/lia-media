@@ -56,6 +56,12 @@ Route::middleware(['material.cors', 'material.client', 'throttle:api'])->prefix(
     Route::get('/{reference}', [MaterialRequestPublicController::class, 'showByReference'])->where('reference', 'MR-[A-Za-z0-9]+');
 });
 
+// Equipment QR (borrower pickup confirmation, no staff session).
+Route::middleware('throttle:material-prefill')->prefix('v1/qr/{token}')->where(['token' => '[A-Za-z0-9]{20,40}'])->group(function () {
+    Route::get('/', [\App\Http\Controllers\Api\EquipmentQrController::class, 'publicShow'])->withoutMiddleware('throttle:material-prefill')->middleware('throttle:share');
+    Route::post('/confirm', [\App\Http\Controllers\Api\EquipmentQrController::class, 'confirm']);
+});
+
 // Visitor share endpoints (no staff session).
 Route::middleware('throttle:share')->prefix('s/{token}')->where(['token' => '[A-Za-z0-9_-]{20,64}'])->group(function () {
     Route::get('/', [PublicShareController::class, 'show']);
@@ -209,6 +215,8 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
         });
         Route::middleware('can:material-requests.issue')->group(function () {
             Route::get('/store/dashboard', [StorekeeperController::class, 'dashboard']);
+            Route::get('/equipment-scan/{token}', [\App\Http\Controllers\Api\EquipmentQrController::class, 'scan'])->where('token', '[A-Za-z0-9]{20,40}');
+            Route::post('/equipment-scan/{token}/check', [\App\Http\Controllers\Api\EquipmentQrController::class, 'check'])->where('token', '[A-Za-z0-9]{20,40}');
         });
 
         // Equipment inventory

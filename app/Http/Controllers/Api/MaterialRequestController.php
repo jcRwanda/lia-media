@@ -118,6 +118,8 @@ class MaterialRequestController extends Controller
             $data = $item->toArray();
             $data['issued_by'] = $item->issuedBy?->name;
             $data['received_by'] = $item->receivedBy?->name;
+            $data['checks'] = \App\Models\EquipmentCheck::query()->with('actor:id,name')
+                ->where('material_request_item_id', $item->id)->orderBy('created_at')->get()->map->present()->values()->all();
             $data['issue_proof_urls'] = $item->proofs->where('type', 'issue')
                 ->map(fn ($proof) => $this->files->presign($proof->path, $proof->name))
                 ->filter()->values()->all();

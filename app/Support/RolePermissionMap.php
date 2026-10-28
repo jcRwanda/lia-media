@@ -50,6 +50,8 @@ final class RolePermissionMap
             'label' => 'Equipment',
             'permissions' => [
                 'equipment.manage' => 'Manage equipment',
+                'equipment.edit_serial' => 'Change serial numbers',
+                'equipment.delete' => 'Delete equipment',
             ],
         ],
         'users' => [
