@@ -106,6 +106,18 @@ class EquipmentItemController extends Controller
         $data = $validator->validated();
         unset($data['photo'], $data['photos'], $data['images']);
 
+        if (array_key_exists('serial_number', $data)
+            && (string) ($data['serial_number'] ?? '') !== (string) ($equipmentItem->serial_number ?? '')
+            && ! $request->user()->canDo('equipment.edit_serial')) {
+            return response()->json([
+                'message' => 'Only an admin can change the serial number.',
+                'errors' => ['serial_number' => ['Only an admin can change the serial number.']],
+            ], 403);
+        }
+        if (! $request->user()->canDo('equipment.edit_serial')) {
+            unset($data['serial_number']);
+        }
+
         if ($request->hasFile('photo')) {
             $data['photo_path'] = $this->storeFile($request->file('photo'))['path'];
         }
@@ -162,8 +174,8 @@ class EquipmentItemController extends Controller
 
     public function destroy(Request $request, EquipmentItem $equipmentItem): JsonResponse
     {
-        if (! $request->user()?->canDo('equipment.manage')) {
-            abort(403);
+        if (! $request->user()?->canDo('equipment.delete')) {
+            abort(403, 'Only an admin can delete equipment.');
         }
 
         $equipmentItem->delete();
@@ -174,6 +186,10 @@ class EquipmentItemController extends Controller
     private function present(EquipmentItem $item): array
     {
         $payload = $item->toArray();
+        $user = request()->user();
+        $payload['qr_url'] = $item->qr_token ? $item->qrUrl() : null;
+        $payload['can_edit_serial'] = (bool) $user?->canDo('equipment.edit_serial');
+        $payload['can_delete'] = (bool) $user?->canDo('equipment.delete');
         $payload['photo_url'] = $this->files->presign($item->photo_path, 'equipment-'.$item->id);
         $payload['images'] = $item->images->map(fn ($image) => [
             'id' => $image->id,

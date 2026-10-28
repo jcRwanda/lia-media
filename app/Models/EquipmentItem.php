@@ -22,6 +22,25 @@ class EquipmentItem extends Model
         'photo_path',
     ];
 
+    protected static function booted(): void
+    {
+        static::creating(function (EquipmentItem $item) {
+            if (! $item->qr_token) {
+                $item->qr_token = \Illuminate\Support\Str::random(32);
+            }
+        });
+    }
+
+    public function qrUrl(): string
+    {
+        return rtrim((string) config('app.url'), '/').'/q/'.$this->qr_token;
+    }
+
+    public function checks(): HasMany
+    {
+        return $this->hasMany(EquipmentCheck::class);
+    }
+
     protected function casts(): array
     {
         return [

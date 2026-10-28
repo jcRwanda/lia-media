@@ -7,6 +7,7 @@ import { Badge, Card, CardContent, CardHeader, CardTitle, EmptyState, PageHeader
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router';
 
 interface EquipmentImage {
     id: number;
@@ -25,6 +26,9 @@ interface EquipmentItem {
     allowed_for_trainees: boolean;
     photo_url: string | null;
     images: EquipmentImage[];
+    qr_url?: string | null;
+    can_edit_serial?: boolean;
+    can_delete?: boolean;
 }
 
 interface EquipmentForm {
@@ -113,6 +117,12 @@ export default function EquipmentInventoryPage() {
         },
     });
 
+    const remove = useMutation({
+        mutationFn: async (id: number) => api(`/equipment-items/${id}`, { method: 'DELETE' }),
+        onSuccess: () => qc.invalidateQueries({ queryKey: ['equipment-items'] }),
+        onError: (e) => setError(describeError(e, 'Could not delete item')),
+    });
+
     const saveEdit = useMutation({
         mutationFn: async () => {
             if (editingId === null) return;
@@ -155,6 +165,11 @@ export default function EquipmentInventoryPage() {
             <PageHeader
                 title="Equipment inventory"
                 description="Add and edit equipment, quantities, condition, serial numbers, trainee eligibility and photos."
+                actions={
+                    <Button size="sm" variant="secondary" asChild>
+                        <Link to="/equipment-labels">Print all QR labels</Link>
+                    </Button>
+                }
             />
 
             {error ? <div className="whitespace-pre-line rounded-lg border border-red-200 bg-red-50 p-2 text-sm text-red-700">{error}</div> : null}
@@ -219,7 +234,13 @@ export default function EquipmentInventoryPage() {
                                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                                         <Input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} placeholder="Name" />
                                         <CategorySelect value={editForm.category} options={categories} onChange={(category) => setEditForm({ ...editForm, category })} />
-                                        <Input value={editForm.serial_number} onChange={(e) => setEditForm({ ...editForm, serial_number: e.target.value })} placeholder="Serial number" />
+                                        <Input
+                                            value={editForm.serial_number}
+                                            disabled={!item.can_edit_serial}
+                                            title={item.can_edit_serial ? undefined : 'Only an admin can change the serial number'}
+                                            onChange={(e) => setEditForm({ ...editForm, serial_number: e.target.value })}
+                                            placeholder={item.can_edit_serial ? 'Serial number' : 'Serial number (admin only)'}
+                                        />
                                         <Input value={editForm.asset_tag} onChange={(e) => setEditForm({ ...editForm, asset_tag: e.target.value })} placeholder="Asset tag" />
                                         <Input value={editForm.condition} onChange={(e) => setEditForm({ ...editForm, condition: e.target.value })} placeholder="Condition" />
                                         <Input type="number" min={0} value={editForm.total_qty} onChange={(e) => setEditForm({ ...editForm, total_qty: e.target.value })} placeholder="Quantity" />
@@ -274,9 +295,26 @@ export default function EquipmentInventoryPage() {
                                     ) : (
                                         <p className="text-xs text-neutral-400">No photos yet.</p>
                                     )}
-                                    <Button size="sm" variant="secondary" onClick={() => startEdit(item)}>
-                                        Edit item
-                                    </Button>
+                                    <div className="flex flex-wrap gap-2">
+                                        <Button size="sm" variant="secondary" onClick={() => startEdit(item)}>
+                                            Edit item
+                                        </Button>
+                                        <Button size="sm" variant="secondary" asChild>
+                                            <Link to={`/equipment-labels?ids=${item.id}`}>QR label</Link>
+                                        </Button>
+                                        {item.can_delete ? (
+                                            <Button
+                                                size="sm"
+                                                variant="destructive"
+                                                disabled={remove.isPending}
+                                                onClick={() => {
+                                                    if (window.confirm(`Delete ${item.name}? This cannot be undone from the app.`)) remove.mutate(item.id);
+                                                }}
+                                            >
+                                                Delete
+                                            </Button>
+                                        ) : null}
+                                    </div>
                                 </>
                             )}
                         </CardContent>
@@ -286,3 +324,4 @@ export default function EquipmentInventoryPage() {
         </div>
     );
 }
+

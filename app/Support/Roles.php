@@ -41,6 +41,8 @@ final class Roles
         'material-requests.issue' => [self::STOREKEEPER, self::MANAGEMENT, self::COMMUNICATIONS],
         'material-requests.return' => [self::STOREKEEPER, self::MANAGEMENT, self::COMMUNICATIONS],
         'equipment.manage' => [self::STOREKEEPER, self::MANAGEMENT, self::COMMUNICATIONS],
+        'equipment.edit_serial' => [],
+        'equipment.delete' => [],
     ];
 
     public static function allows(?string $role, string $ability): bool

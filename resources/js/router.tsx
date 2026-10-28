@@ -23,6 +23,9 @@ import MaterialRequestDetailPage from '@/pages/material-requests/MaterialRequest
 import EquipmentInventoryPage from '@/pages/material-requests/EquipmentInventoryPage';
 import EquipmentCalendarPage from '@/pages/material-requests/EquipmentCalendarPage';
 import StorekeeperPortalPage from '@/pages/storekeeper/StorekeeperPortalPage';
+import PublicQrPage from '@/pages/equipment/PublicQrPage';
+import EquipmentScanPage from '@/pages/equipment/EquipmentScanPage';
+import EquipmentLabelsPage from '@/pages/equipment/EquipmentLabelsPage';
 
 const guard = (ability: string, el: React.ReactNode) => <RequireAbility ability={ability}>{el}</RequireAbility>;
 
@@ -30,6 +33,7 @@ export const routes = [
     { path: '/login', element: <LoginPage /> },
     { path: '/set-password', element: <SetPasswordPage /> },
     { path: '/s/:token', element: <VisitorGalleryPage /> },
+    { path: '/q/:token', element: <PublicQrPage /> },
     {
         element: <AppLayout />,
         children: [
@@ -50,6 +54,8 @@ export const routes = [
             { path: '/storekeeper', element: guard('material-requests.issue', <StorekeeperPortalPage />) },
             { path: '/material-requests', element: guard('material-requests.view', <MaterialRequestsPage />) },
             { path: '/material-requests/:id', element: guard('material-requests.view', <MaterialRequestDetailPage />) },
+            { path: '/storekeeper/scan', element: guard('material-requests.issue', <EquipmentScanPage />) },
+            { path: '/equipment-labels', element: guard('equipment.manage', <EquipmentLabelsPage />) },
             { path: '/equipment-inventory', element: guard('equipment.manage', <EquipmentInventoryPage />) },
             { path: '/equipment-calendar', element: guard('material-requests.view', <EquipmentCalendarPage />) },
             { path: '/profile', element: <ProfilePage /> },

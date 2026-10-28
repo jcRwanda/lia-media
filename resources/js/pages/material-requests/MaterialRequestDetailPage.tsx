@@ -176,6 +176,14 @@ export default function MaterialRequestDetailPage() {
                                     <div>{it.equipment_item?.name}</div>
                                     {it.issued_at ? <div className="text-[11px] text-neutral-500">Handed out {formatDate(it.issued_at)}{it.issued_by ? ` by ${it.issued_by}` : ''}</div> : null}
                                     {it.returned_at ? <div className="text-[11px] text-neutral-500">Checked in {formatDate(it.returned_at)}{it.received_by ? ` by ${it.received_by}` : ''}</div> : null}
+                                    {(it.checks || []).map((c: any) => (
+                                        <div key={c.id} className={`text-[11px] ${c.flagged ? 'text-amber-700' : 'text-green-700'}`}>
+                                            {c.flagged ? '⚠️' : '✓'} {c.type === 'pickup_confirm' ? 'Borrower confirmed pickup (QR' + (c.verified_via ? `, ${c.verified_via}` : '') + ')' : c.type === 'issue_check' ? 'Hand-out QR check' : 'Return QR check'}
+                                            {' '}{formatDate(c.created_at)}{c.actor ? ` by ${c.actor}` : ''}
+                                            {c.serial_matches === false ? ' · serial mismatch' : c.serial_matches ? ' · serial OK' : ''}
+                                            {c.flag_reason ? ` · ${c.flag_reason}` : ''}{c.notes ? ` · “${c.notes}”` : ''}
+                                        </div>
+                                    ))}
                                 </td>
                                 <td className="p-2">{it.qty_requested}</td>
                                 <td className="p-2">{it.qty_approved}</td>
