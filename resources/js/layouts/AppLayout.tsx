@@ -22,7 +22,7 @@ const nav: NavItem[] = [
     { to: '/shares', label: 'Share links', icon: Share2, ability: 'shares.manage' },
     { to: '/', section: 'Storekeeper', label: 'Dashboard', icon: LayoutDashboard, ability: 'material-requests.issue', end: true },
     { to: '/storekeeper', section: 'Storekeeper', label: 'Portal', icon: ClipboardCheck, ability: 'material-requests.issue', end: true },
-    { to: '/storekeeper/scan', section: 'Storekeeper', label: 'Scan to check', icon: ScanLine, ability: 'material-requests.issue' },
+    { to: '/storekeeper/scan', section: 'Storekeeper', label: 'Scan QR', icon: ScanLine, ability: 'material-requests.issue' },
     { to: '/material-requests', section: 'Storekeeper', label: 'Material Requests', icon: ClipboardList, ability: 'material-requests.view' },
     { to: '/equipment-inventory', section: 'Storekeeper', label: 'Inventory', icon: FolderOpen, ability: 'equipment.manage' },
     { to: '/equipment-calendar', section: 'Storekeeper', label: 'Equipment calendar', icon: CalendarDays, ability: 'material-requests.view' },
@@ -77,6 +77,12 @@ export default function AppLayout() {
                     <button className="lg:hidden" aria-label="Open menu" onClick={() => setOpen(true)}><Menu className="h-5 w-5" /></button>
                     <div className="lg:hidden"><Brand /></div>
                     <div className="ml-auto flex items-center gap-3 text-sm">
+                        {can('material-requests.issue') ? (
+                            <NavLink to="/storekeeper/scan" className="inline-flex items-center gap-1.5 rounded-full bg-lia-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-lia-700">
+                                <ScanLine className="h-4 w-4" />
+                                Scan QR
+                            </NavLink>
+                        ) : null}
                         <NavLink to="/profile" className="hidden items-center gap-1 text-neutral-600 hover:text-lia-700 sm:flex">
                             <User className="h-4 w-4" />
                             <span>{user.name}</span>
@@ -94,6 +100,11 @@ export default function AppLayout() {
                     </div>
                 ) : null}
                 <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6"><Outlet /></main>
+                {can('material-requests.issue') && loc.pathname !== '/storekeeper/scan' ? (
+                    <NavLink to="/storekeeper/scan" aria-label="Scan QR" className="fixed bottom-5 right-5 z-20 flex h-14 w-14 items-center justify-center rounded-full bg-lia-600 text-white shadow-lg ring-4 ring-lia-100 hover:bg-lia-700 lg:hidden">
+                        <ScanLine className="h-6 w-6" />
+                    </NavLink>
+                ) : null}
             </div>
         </div>
     );

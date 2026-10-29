@@ -8,7 +8,7 @@ import { Badge, Card, CardContent, CardHeader, CardTitle, EmptyState, PageHeader
 import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
 import { useState } from 'react';
-import { ClipboardCheck, MessageCircle, PackageCheck, X } from 'lucide-react';
+import { ClipboardCheck, MessageCircle, PackageCheck, ScanLine, X } from 'lucide-react';
 
 type Tab = 'to_hand_out' | 'out_now' | 'due_overdue' | 'history';
 
@@ -156,9 +156,12 @@ export default function StorekeeperPortalPage() {
                 title="Storekeeper portal"
                 description="Approved bookings, hand-outs and returns. Every hand-out and check-in needs photo proof."
                 actions={
-                    <Button asChild variant="secondary" size="sm">
-                        <Link to="/equipment-inventory">Manage inventory</Link>
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                        <Button asChild size="sm"><Link to="/storekeeper/scan"><ScanLine className="h-4 w-4" />Scan QR</Link></Button>
+                        <Button asChild variant="secondary" size="sm">
+                            <Link to="/equipment-inventory">Manage inventory</Link>
+                        </Button>
+                    </div>
                 }
             />
 
