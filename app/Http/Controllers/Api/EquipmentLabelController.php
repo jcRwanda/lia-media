@@ -37,12 +37,19 @@ class EquipmentLabelController extends Controller
             $query->where('total_qty', '>', 0);
         }
 
+        // dompdf is memory hungry: 25+ vector QR codes blew the 128M default.
+        @ini_set('memory_limit', '512M');
+        @set_time_limit(180);
+        $useImage = extension_loaded('gd');
+
         $labels = $query->orderBy('category')->orderBy('name')->get()->map(fn (EquipmentItem $i) => [
-            'name' => $i->name,
-            'serial' => $i->serial_number,
-            'tag' => $i->asset_tag,
-            'category' => $i->category,
-            'qr' => $qr->html($i->qrUrl()),
+            'name' => (string) $i->name,
+            'serial' => (string) ($i->serial_number ?? ''),
+            'tag' => (string) ($i->asset_tag ?? ''),
+            'category' => (string) ($i->category ?? ''),
+            'qr' => $useImage
+                ? '<img src="'.$qr->pngDataUri($i->qrUrl()).'" style="position:absolute;left:0;top:0;width:34mm;height:34mm">'
+                : $qr->html($i->qrUrl()),
         ])->all();
 
         return $this->render($labels)->download('lia-equipment-labels-'.now()->format('Y-m-d').'.pdf');

@@ -28,6 +28,24 @@ class EquipmentLabelPdfTest extends TestCase
         $this->actingAs($admin)->getJson('/api/equipment-labels/pdf?trainee=maybe')->assertStatus(422);
     }
 
+    public function test_full_in_stock_sheet_of_many_labels_renders_within_memory(): void
+    {
+        // Regression: 25 in-stock labels (3 A4 pages) exhausted dompdf's 128M limit -> 500.
+        $admin = User::factory()->create(['role' => 'admin']);
+        foreach (range(1, 30) as $n) {
+            EquipmentItem::factory()->create(['name' => "Item $n", 'category' => $n % 2 ? 'Camera' : 'Light', 'total_qty' => 1, 'asset_tag' => null]);
+        }
+        $old = ini_get('memory_limit');
+        ini_set('memory_limit', '128M');
+        try {
+            $res = $this->actingAs($admin)->get('/api/equipment-labels/pdf?in_stock=1');
+        } finally {
+            ini_set('memory_limit', $old);
+        }
+        $res->assertOk()->assertHeader('content-type', 'application/pdf');
+        $this->assertStringStartsWith('%PDF', $res->getContent());
+    }
+
     public function test_storekeeper_cannot_download_label_pdf(): void
     {
         $sk = User::factory()->create(['role' => 'storekeeper']);
