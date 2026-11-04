@@ -220,6 +220,10 @@ class MaterialRequestPublicController extends Controller
                 $rules['expected_outcome'] = ['nullable', 'string'];
                 $rules['portfolio_social_link'] = ['nullable', 'string', 'max:500'];
             }
+            if ($requesterType === 'alumni') {
+                $rules['certificate'] = ['nullable'];
+                $rules['certificate_url'] = ['nullable', 'url:https', 'max:2048'];
+            }
         }
 
         $validator = Validator::make($data, $rules);
@@ -311,6 +315,10 @@ class MaterialRequestPublicController extends Controller
             throw ValidationException::withMessages(['id_document' => 'Upload your ID (image or PDF).']);
         }
 
+        $certificate = $validated['requester_type'] === 'alumni'
+            ? $this->resolveCertificate($validated, $request->attributes->get('api_client') instanceof ApiClient)
+            : null;
+
         $signature = $validated['signature'] instanceof UploadedFile
             ? $this->files->storeSignature($validated['signature'])
             : $this->files->storeSignature((string) $validated['signature']);
@@ -320,7 +328,7 @@ class MaterialRequestPublicController extends Controller
         $apiClient = $apiClient instanceof ApiClient ? $apiClient : null;
         $source = $apiClient?->name ?? 'Direct/Hosted form';
 
-        $materialRequest = DB::transaction(function () use ($validated, $bookingLines, $neededFrom, $returnBy, $idDocument, $signature, $cohort, $apiClient, $source) {
+        $materialRequest = DB::transaction(function () use ($validated, $bookingLines, $neededFrom, $returnBy, $idDocument, $signature, $cohort, $apiClient, $source, $certificate) {
             $this->availability->assertCanBook($bookingLines, $neededFrom, $returnBy, lockItems: true);
 
             $materialRequest = MaterialRequest::query()->create([
@@ -366,6 +374,11 @@ class MaterialRequestPublicController extends Controller
                 'id_document_path' => $idDocument['path'] ?? null,
                 'id_document_mime' => $idDocument['mime'] ?? null,
                 'id_document_name' => $idDocument['name'] ?? null,
+                'certificate_path' => $certificate['path'] ?? null,
+                'certificate_mime' => $certificate['mime'] ?? null,
+                'certificate_name' => $certificate['name'] ?? null,
+                'certificate_url' => $certificate['url'] ?? null,
+                'certificate_source' => $certificate['source'] ?? null,
                 'signature_path' => $signature['path'],
                 'signature_date' => now()->toDateString(),
                 'status' => 'submitted',
@@ -813,6 +826,42 @@ class MaterialRequestPublicController extends Controller
     /**
      * @param  list<?string>  $parts
      */
+    /**
+     * Alumni submit their graduation certificate once: a new upload or https link wins, otherwise the
+     * certificate from their latest earlier alumni request (same email) is reused.
+     * Required on the hosted form; for API clients only when material-requests.alumni_certificate_required_for_api is on.
+     *
+     * @return array{path: ?string, mime: ?string, name: ?string, url: ?string, source: string}|null
+     */
+    private function resolveCertificate(array $validated, bool $viaApi): ?array
+    {
+        $upload = $validated['certificate'] ?? null;
+        if ($upload instanceof UploadedFile || (is_string($upload) && str_starts_with($upload, 'data:'))) {
+            return [...$this->files->storeCertificate($upload), 'url' => null, 'source' => 'uploaded'];
+        }
+        if (! empty($validated['certificate_url'])) {
+            return ['path' => null, 'mime' => null, 'name' => null, 'url' => $validated['certificate_url'], 'source' => 'link'];
+        }
+        $previous = MaterialRequest::query()
+            ->where('requester_type', 'alumni')
+            ->where('email', $validated['email'])
+            ->where(fn ($q) => $q->whereNotNull('certificate_path')->orWhereNotNull('certificate_url'))
+            ->latest('id')
+            ->first();
+        if ($previous) {
+            return [
+                'path' => $previous->certificate_path, 'mime' => $previous->certificate_mime,
+                'name' => $previous->certificate_name, 'url' => $previous->certificate_url, 'source' => 'reused',
+            ];
+        }
+        $required = ! $viaApi || (bool) config('material-requests.alumni_certificate_required_for_api', false);
+        if ($required) {
+            throw ValidationException::withMessages(['certificate' => 'Alumni must upload their graduation certificate (image or PDF). / Ohereza impamyabumenyi yawe.']);
+        }
+
+        return null;
+    }
+
     private function composeAddress(array $parts): ?string
     {
         $parts = array_values(array_filter($parts, fn ($part) => filled($part)));

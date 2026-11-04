@@ -162,6 +162,9 @@ class MaterialRequestController extends Controller
         })->values()->all();
         $payload['id_document_url'] = $this->files->presign($materialRequest->id_document_path, $materialRequest->id_document_name);
         $payload['signature_url'] = $this->files->presign($materialRequest->signature_path, 'signature.png');
+        $payload['certificate_file_url'] = $materialRequest->certificate_path
+            ? $this->files->presign($materialRequest->certificate_path, $materialRequest->certificate_name)
+            : $materialRequest->certificate_url;
         $payload['final_works'] = $materialRequest->finalWorks->map(fn ($fw) => [
             'id' => $fw->id,
             'link' => $fw->link,

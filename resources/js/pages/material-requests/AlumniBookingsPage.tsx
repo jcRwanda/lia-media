@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { useState } from 'react';
-import { CalendarDays, GraduationCap, Package, Search } from 'lucide-react';
+import { Award, CalendarDays, GraduationCap, Package, Search } from 'lucide-react';
 import { api } from '@/lib/api';
 
 const STATUSES: { key: string; label: string; tone: string }[] = [
@@ -86,6 +86,13 @@ export default function AlumniBookingsPage() {
                                 <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${statusTone(r.status)}`}>
                                     {String(r.status).replace('_', ' ')}
                                 </span>
+                            </div>
+                            <div className="mt-2">
+                                {r.certificate_path || r.certificate_url ? (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700"><Award className="h-3 w-3" />Certificate on file</span>
+                                ) : (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-700"><Award className="h-3 w-3" />No certificate</span>
+                                )}
                             </div>
                             <div className="mt-3 text-sm font-medium text-neutral-800">{r.project_title || r.project_name || 'Untitled project'}</div>
                             {r.project_type && <div className="text-xs text-neutral-500">{r.project_type}</div>}

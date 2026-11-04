@@ -235,6 +235,12 @@
             <span id="id-reuse-note" class="mt-1 hidden text-xs text-green-700">Your last ID is attached after verification. / Indangamuntu yawe ya nyuma izakoreshwa.</span>
         </label>
 
+        <label id="certificate-wrap" class="hidden block rounded-xl border border-neutral-200 bg-white p-4 text-sm">
+            <span class="font-semibold">Graduation certificate / Impamyabumenyi <span class="text-neutral-500">* (once / rimwe gusa)</span></span>
+            <input name="certificate" id="certificate" type="file" accept="image/*,.heic,.heif,application/pdf" class="mt-1 w-full rounded-lg border p-2">
+            <span class="mt-1 block text-xs text-neutral-500">Photo or PDF of your LIA certificate. Only needed the first time; next requests reuse it. / Ifoto cyangwa PDF. Ni rimwe gusa.</span>
+        </label>
+
         <fieldset class="rounded-xl border border-neutral-200 bg-white p-4">
             <legend class="px-1 text-sm font-semibold">{{ $label('signature')['en'] }} / {{ $label('signature')['kn'] }} *</legend>
             <p class="mt-1 text-xs text-neutral-500">Sign with your finger or mouse. / Sinye ukoresheje urutoki cyangwa imbeba.</p>
@@ -339,6 +345,7 @@
         $('cohort_id').required = alumniType;
         const idRequired = type() === 'client' || type() === 'alumni';
         $('id-required').textContent = idRequired ? '*' : '(optional / si ngombwa)';
+        $('certificate-wrap').classList.toggle('hidden', type() !== 'alumni');
     }
 
     function fillSelect(select, values, placeholder) {
@@ -813,6 +820,8 @@
         const file = $('id_document').files[0];
         if (idRequired && !file && !idReuseToken) return 'Upload your ID (image or PDF). / Ohereza indangamuntu yawe.';
         if (file && file.size > CONFIG.idMaxBytes) return 'The ID file is too large. / Dosive ya indangamuntu ni nini cyane.';
+        const cert = $('certificate').files[0];
+        if (cert && cert.size > CONFIG.idMaxBytes) return 'The certificate file is too large. / Impamyabumenyi ni nini cyane.';
         return null;
     }
 
@@ -844,6 +853,7 @@
         formData.set('signature_date', new Date().toISOString().slice(0, 10));
         if (idReuseToken) formData.set('reuse_id_token', idReuseToken);
         if (!$('id_document').files[0]) formData.delete('id_document');
+        if (type() !== 'alumni' || !$('certificate').files[0]) formData.delete('certificate');
         formData.set('residential_address', [
             $('village_res').value, $('cell_res').value, $('sector_res').value, $('district_res').value, $('province_res').value,
         ].filter(Boolean).join(', '));

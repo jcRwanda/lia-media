@@ -165,6 +165,20 @@ export default function MaterialRequestDetailPage() {
                         </div>
                     ) : null}
                     <div>Consent: {data.consent_declaration ? 'Accepted' : 'Not accepted'}</div>
+                    {data.requester_type === 'alumni' && (
+                        <div className={`mt-2 rounded-lg px-3 py-2 ${data.certificate_file_url ? 'bg-emerald-50' : 'bg-rose-50'}`}>
+                            <div className="font-medium">Graduation certificate</div>
+                            {data.certificate_file_url ? (
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <a className="text-lia-700 underline" href={data.certificate_file_url} target="_blank" rel="noreferrer">View certificate</a>
+                                    <span className="text-xs text-neutral-500">{data.certificate_source === 'reused' ? 'reused from an earlier request' : data.certificate_source === 'link' ? 'link from portal' : 'uploaded with this request'}</span>
+                                </div>
+                            ) : <div className="text-rose-700">Not provided. Use “Request changes” to ask the alumni to upload it.</div>}
+                            {data.certificate_file_url && /\.(jpe?g|png|webp)(\?|$)/i.test(data.certificate_name || '') && (
+                                <img src={data.certificate_file_url} alt="Certificate" className="mt-2 max-h-48 rounded border bg-white" />
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
 
