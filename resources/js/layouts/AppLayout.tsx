@@ -1,4 +1,4 @@
-import { Archive, BarChart3, CalendarDays, ClipboardCheck, ClipboardList, FolderOpen, FolderTree, Images, LayoutDashboard, LogOut, Menu, ScanLine, ScrollText, Settings, Share2, Shield, ShieldCheck, Upload, User, Users, X } from 'lucide-react';
+import { Archive, BarChart3, CalendarDays, ClipboardCheck, ClipboardList, FolderOpen, FolderTree, GraduationCap, Images, LayoutDashboard, LogOut, Menu, ScanLine, ScrollText, Settings, Share2, Shield, ShieldCheck, Upload, User, Users, X } from 'lucide-react';
 import { useState } from 'react';
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router';
 import { useAuth } from '@/auth/AuthContext';
@@ -24,6 +24,7 @@ const nav: NavItem[] = [
     { to: '/storekeeper', section: 'Storekeeper', label: 'Portal', icon: ClipboardCheck, ability: 'material-requests.issue', end: true },
     { to: '/storekeeper/scan', section: 'Storekeeper', label: 'Scan QR', icon: ScanLine, ability: 'material-requests.issue' },
     { to: '/material-requests', section: 'Storekeeper', label: 'Material Requests', icon: ClipboardList, ability: 'material-requests.view' },
+    { to: '/alumni-bookings', section: 'Storekeeper', label: 'Alumni bookings', icon: GraduationCap, ability: 'material-requests.view' },
     { to: '/equipment-inventory', section: 'Storekeeper', label: 'Inventory', icon: FolderOpen, ability: 'equipment.manage' },
     { to: '/equipment-calendar', section: 'Storekeeper', label: 'Equipment calendar', icon: CalendarDays, ability: 'material-requests.view' },
     { to: '/taxonomy', label: 'Projects & events', icon: FolderTree, ability: 'library.view' },

@@ -13,6 +13,7 @@ use App\Models\MaterialRequestFinalWork;
 use App\Models\MaterialRequestItem;
 use App\Services\MaterialRequestAuditService;
 use App\Services\MaterialRequestDecisionService;
+use App\Services\MaterialRequestFormSchemaService;
 use App\Services\MaterialRequestService;
 use App\Services\MaterialRequestWebhookService;
 use App\Support\ImageNormalizer;
@@ -54,6 +55,16 @@ class MaterialRequestController extends Controller
                 ->whereDate('return_by', '<', now()->toDateString());
         }
 
+        if ($request->filled('search')) {
+            $term = '%'.trim((string) $request->input('search')).'%';
+            $base->where(fn ($q) => $q->where('full_name', 'like', $term)
+                ->orWhere('email', 'like', $term)
+                ->orWhere('phone', 'like', $term)
+                ->orWhere('reference_code', 'like', $term)
+                ->orWhere('project_title', 'like', $term)
+                ->orWhere('student_alumni_id', 'like', $term));
+        }
+
         $directLabel = 'Direct/Hosted form';
         $total = (clone $base)->count();
         $counts = (clone $base)
@@ -93,6 +104,13 @@ class MaterialRequestController extends Controller
         $requests = $query->orderByDesc('created_at')->paginate($request->integer('per_page', 25));
         $payload = $requests->toArray();
         $payload['sources'] = $sources;
+        if ($request->filled('requester_type')) {
+            $payload['status_counts'] = MaterialRequest::query()
+                ->where('requester_type', $request->input('requester_type'))
+                ->selectRaw('status, COUNT(*) as aggregate')
+                ->groupBy('status')
+                ->pluck('aggregate', 'status');
+        }
 
         return response()->json($payload);
     }
@@ -157,6 +175,7 @@ class MaterialRequestController extends Controller
 
         $payload['status_history'] = $materialRequest->statusHistories->map(fn ($h) => $h->present())->values();
         $payload['decision'] = $this->decisions->decision($materialRequest);
+        $payload['form_answers'] = $this->formAnswers($materialRequest);
 
         return response()->json(['request' => $payload]);
     }
@@ -659,6 +678,54 @@ class MaterialRequestController extends Controller
         $this->webhooks->dispatchEvent($materialRequest->fresh(['apiClient']), 'final_work.needs_changes');
 
         return response()->json(['message' => 'Changes requested', 'final_work_status' => $materialRequest->final_work_status]);
+    }
+
+    /**
+     * Every field of the requester's form (same schema the public / portal form uses), grouped by section,
+     * with select values resolved to their labels. Items and uploads are shown separately.
+     *
+     * @return list<array{key: string, label: string, fields: list<array{key: string, label: string, type: string, value: mixed}>}>
+     */
+    private function formAnswers(MaterialRequest $materialRequest): array
+    {
+        $schema = app(MaterialRequestFormSchemaService::class)->build((string) $materialRequest->requester_type);
+        $attributes = $materialRequest->getAttributes();
+        $sections = [];
+        foreach ($schema['fields'] as $field) {
+            $key = $field['key'];
+            if (in_array($field['type'], ['items', 'file', 'signature'], true) || ! array_key_exists($key, $attributes)) {
+                continue;
+            }
+            $value = $materialRequest->getAttribute($key);
+            if ($value instanceof \DateTimeInterface) {
+                $value = $value->format('Y-m-d');
+            }
+            if ($field['type'] === 'checkbox') {
+                $value = $value === null ? null : (bool) $value;
+            } elseif (! empty($field['options']) && $value !== null && $value !== '') {
+                foreach ($field['options'] as $option) {
+                    if ((string) $option['value'] === (string) $value) {
+                        $value = is_array($option['label']) ? ($option['label']['en'] ?? $value) : $option['label'];
+                        break;
+                    }
+                }
+            }
+            $section = $field['section'];
+            $sections[$section] ??= ['key' => $section, 'label' => $section, 'fields' => []];
+            $sections[$section]['fields'][] = [
+                'key' => $key,
+                'label' => is_array($field['label']) ? ($field['label']['en'] ?? $key) : (string) $field['label'],
+                'type' => $field['type'],
+                'value' => $value,
+            ];
+        }
+        foreach ($schema['sections'] as $meta) {
+            if (isset($sections[$meta['key']])) {
+                $sections[$meta['key']]['label'] = $meta['label']['en'] ?? $meta['key'];
+            }
+        }
+
+        return array_values($sections);
     }
 
     private function pickupLocation(MaterialRequest $materialRequest): string
