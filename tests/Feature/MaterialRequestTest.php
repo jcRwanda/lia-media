@@ -136,6 +136,7 @@ class MaterialRequestTest extends TestCase
             'cohort_id' => $cohort->id,
             'project_same_as_residential' => true,
             'signature_date' => '2000-01-01',
+            'certificate_url' => 'https://learning.loveinarts.com/certificates/alumni2.pdf',
         ]);
         $this->withHeaders(['Origin' => 'https://learning.loveinarts.com'])->postJson('/api/v1/material-requests/submit', $payload)->assertStatus(201);
 

@@ -147,6 +147,9 @@ class MaterialRequestFormSchemaService
                 $this->field('consent_declaration', 'checkbox', true, 'declarations', $labels),
                 $this->field('signature', 'signature', true, 'documents', $labels),
                 $this->field('id_document', 'file', $idRequired, 'documents', $labels),
+                ...($type === 'alumni' ? [$this->field('certificate', 'file', true, 'documents', [
+                    'certificate' => ['en' => 'Graduation certificate (once)', 'kn' => 'Impamyabumenyi (rimwe gusa)'],
+                ], ['accept' => ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'application/pdf'], 'alternative' => 'certificate_url', 'reused_after_first_submission' => true])] : []),
 
                 $this->field('source_detail', 'text', false, 'metadata', $labels, ['max_length' => 255]),
             ];

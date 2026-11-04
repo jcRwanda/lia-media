@@ -59,6 +59,39 @@ class MaterialRequestService
     }
 
     /**
+     * Alumni graduation certificate (image incl. iPhone HEIC/HEIF, or PDF) as an upload or a data URI.
+     *
+     * @return array{path: string, mime: string, name: string}
+     */
+    public function storeCertificate(UploadedFile|string $file): array
+    {
+        $message = 'Upload your certificate as an image (JPG, PNG, WEBP, HEIC) or a PDF.';
+        if ($file instanceof UploadedFile) {
+            $mime = strtolower((string) $file->getMimeType());
+            $bytes = (string) file_get_contents($file->getRealPath());
+            $name = $file->getClientOriginalName();
+            $ext = strtolower($file->getClientOriginalExtension());
+            if (! isset(self::ID_MIME_EXTENSIONS[$mime]) && in_array($ext, ['heic', 'heif'], true)) {
+                $mime = 'image/'.$ext; // iPhone photos are often sniffed as application/octet-stream
+            }
+        } else {
+            [$mime, $bytes] = $this->decodeDataUri($file, 'certificate');
+            $name = null;
+        }
+        if (! isset(self::ID_MIME_EXTENSIONS[$mime])) {
+            throw ValidationException::withMessages(['certificate' => $message]);
+        }
+        if (strlen($bytes) > config('material-requests.certificate_max_bytes', 10 * 1024 * 1024)) {
+            throw ValidationException::withMessages(['certificate' => 'The certificate file is too large (max 10 MB).']);
+        }
+        $ext = self::ID_MIME_EXTENSIONS[$mime];
+        $key = 'material-requests/certificates/'.Str::uuid().'.'.$ext;
+        $this->storage->put($key, $bytes, $mime);
+
+        return ['path' => $key, 'mime' => $mime, 'name' => $name ?: 'certificate.'.$ext];
+    }
+
+    /**
      * @return array{path: string, mime: string, name: string}
      */
     public function storeSignature(UploadedFile|string $signature): array

@@ -9,6 +9,9 @@ return [
     'otp_ttl' => (int) env('MATERIAL_REQUEST_OTP_TTL', 600),
     'otp_max_attempts' => 5,
     'id_document_max_bytes' => (int) env('MATERIAL_REQUEST_ID_MAX_BYTES', 10485760),
+    'certificate_max_bytes' => (int) env('MATERIAL_REQUEST_CERTIFICATE_MAX_BYTES', 10485760),
+    // Alumni must give a graduation certificate once. Hosted form: always. API clients (learning portal): when enabled.
+    'alumni_certificate_required_for_api' => (bool) env('MATERIAL_REQUEST_ALUMNI_CERT_REQUIRED_API', false),
     'signature_max_bytes' => 2097152,
     'final_work_max_bytes' => (int) env('MATERIAL_REQUEST_FINAL_WORK_MAX_BYTES', 524288000),
     'final_work_allowed_mimes' => [
