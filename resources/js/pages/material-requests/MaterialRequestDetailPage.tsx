@@ -168,6 +168,36 @@ export default function MaterialRequestDetailPage() {
                 </div>
             </div>
 
+            {Array.isArray(data.form_answers) && data.form_answers.length > 0 && (
+                <div className="rounded-2xl border border-neutral-200 bg-white shadow-sm">
+                    <div className="flex items-center justify-between border-b border-neutral-100 px-4 py-3">
+                        <div className="font-semibold text-neutral-900">Submitted form <span className="ml-1 text-xs font-normal capitalize text-neutral-500">({data.requester_type})</span></div>
+                        <span className="text-xs text-neutral-400">Every field the requester filled in</span>
+                    </div>
+                    <div className="grid gap-4 p-4 md:grid-cols-2">
+                        {data.form_answers.map((section: any) => (
+                            <div key={section.key} className={`rounded-xl bg-neutral-50 p-3 ${section.key === 'programme' ? 'ring-1 ring-lia-200 md:col-span-2' : ''}`}>
+                                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-lia-700">{section.label}</div>
+                                <dl className="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">
+                                    {section.fields.map((f: any) => (
+                                        <div key={f.key} className={f.type === 'textarea' ? 'sm:col-span-2' : ''}>
+                                            <dt className="text-[11px] text-neutral-500">{f.label}</dt>
+                                            <dd className="break-words text-sm text-neutral-900">
+                                                {f.value === null || f.value === '' || f.value === undefined ? <span className="text-neutral-400">—</span>
+                                                    : typeof f.value === 'boolean' ? (f.value ? 'Yes' : 'No')
+                                                    : f.type === 'url' ? <a className="text-lia-700 underline" href={String(f.value)} target="_blank" rel="noreferrer">{String(f.value)}</a>
+                                                    : f.type === 'email' ? <a className="text-lia-700" href={`mailto:${f.value}`}>{String(f.value)}</a>
+                                                    : <span className="whitespace-pre-line">{String(f.value)}</span>}
+                                            </dd>
+                                        </div>
+                                    ))}
+                                </dl>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             <div className="border rounded overflow-x-auto">
                 <table className="w-full text-sm">
                     <thead className="bg-neutral-50">

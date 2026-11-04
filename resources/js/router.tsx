@@ -19,6 +19,7 @@ import StoragePage from '@/pages/StoragePage';
 import SettingsPage from '@/pages/admin/SettingsPage';
 import VisitorGalleryPage from '@/pages/shares/VisitorGalleryPage';
 import MaterialRequestsPage from '@/pages/material-requests/MaterialRequestsPage';
+import AlumniBookingsPage from '@/pages/material-requests/AlumniBookingsPage';
 import MaterialRequestDetailPage from '@/pages/material-requests/MaterialRequestDetailPage';
 import EquipmentInventoryPage from '@/pages/material-requests/EquipmentInventoryPage';
 import EquipmentCalendarPage from '@/pages/material-requests/EquipmentCalendarPage';
@@ -53,6 +54,7 @@ export const routes = [
             { path: '/admin/audit', element: guard('audit.view', <AuditPage />) },
             { path: '/storekeeper', element: guard('material-requests.issue', <StorekeeperPortalPage />) },
             { path: '/material-requests', element: guard('material-requests.view', <MaterialRequestsPage />) },
+            { path: '/alumni-bookings', element: guard('material-requests.view', <AlumniBookingsPage />) },
             { path: '/material-requests/:id', element: guard('material-requests.view', <MaterialRequestDetailPage />) },
             { path: '/storekeeper/scan', element: guard('material-requests.issue', <EquipmentScanPage />) },
             { path: '/equipment-labels', element: guard('equipment.manage', <EquipmentLabelsPage />) },
