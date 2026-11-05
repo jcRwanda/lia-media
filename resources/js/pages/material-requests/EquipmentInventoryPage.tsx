@@ -121,9 +121,22 @@ export default function EquipmentInventoryPage() {
 
             return api<{ item: EquipmentItem }>(`/equipment-items/${id}`, { method: 'POST', body: data });
         },
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['equipment-items'] });
+        // Optimistic: show the new tick immediately so a second tap doesn't re-send the old value.
+        onMutate: async ({ id, payload }) => {
+            await qc.cancelQueries({ queryKey: ['equipment-items'] });
+            const previous = qc.getQueryData<EquipmentItem[]>(['equipment-items']);
+            qc.setQueryData<EquipmentItem[]>(['equipment-items'], (cur) => cur?.map((it) => (it.id === id ? { ...it, ...payload } : it)));
+            return { previous };
         },
+        onSuccess: (res) => {
+            if (res?.item) qc.setQueryData<EquipmentItem[]>(['equipment-items'], (cur) => cur?.map((it) => (it.id === res.item.id ? res.item : it)));
+            setError('');
+        },
+        onError: (e, _vars, ctx) => {
+            if (ctx?.previous) qc.setQueryData(['equipment-items'], ctx.previous);
+            setError(describeError(e, 'Could not update item'));
+        },
+        onSettled: () => qc.invalidateQueries({ queryKey: ['equipment-items'] }),
     });
 
     const remove = useMutation({
@@ -350,9 +363,11 @@ export default function EquipmentInventoryPage() {
                                             <input
                                                 type="checkbox"
                                                 checked={!!item.allowed_for_trainees}
+                                                disabled={update.isPending && update.variables?.id === item.id}
                                                 onChange={(e) => update.mutate({ id: item.id, payload: { allowed_for_trainees: e.target.checked } })}
+                                                aria-label={`Allowed for trainees: ${item.name}`}
                                             />
-                                            Trainees
+                                            {update.isPending && update.variables?.id === item.id ? 'Saving…' : 'Visible to trainees'}
                                         </label>
                                     </div>
                                     {item.images.length > 0 ? (

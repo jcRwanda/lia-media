@@ -38,7 +38,7 @@ class EquipmentItemController extends Controller
             abort(403);
         }
 
-        $validator = Validator::make($request->all(), [
+        $validator = Validator::make($this->normalizeBooleans($request->all()), [
             'name' => ['required', 'string', 'max:255'],
             'category' => ['nullable', 'string', 'max:255'],
             'serial_number' => ['nullable', 'string', 'max:255'],
@@ -90,7 +90,7 @@ class EquipmentItemController extends Controller
             abort(403);
         }
 
-        $validator = Validator::make($request->all(), [
+        $validator = Validator::make($this->normalizeBooleans($request->all()), [
             'name' => ['sometimes', 'string', 'max:255'],
             'category' => ['nullable', 'string', 'max:255'],
             'serial_number' => ['nullable', 'string', 'max:255'],
@@ -136,6 +136,25 @@ class EquipmentItemController extends Controller
         $this->syncAccessories($request, $equipmentItem);
 
         return response()->json(['item' => $this->present($equipmentItem->fresh()->load('images'))]);
+    }
+
+    /**
+     * Multipart/FormData sends booleans as strings ("true", "on", "yes", "false", "off", "no", "").
+     * Laravel's boolean rule only accepts 1/0/true/false, so normalise before validating.
+     */
+    private function normalizeBooleans(array $input): array
+    {
+        foreach (['allowed_for_trainees', 'sync_accessories'] as $key) {
+            if (! array_key_exists($key, $input) || is_bool($input[$key]) || $input[$key] === null) {
+                continue;
+            }
+            $value = filter_var($input[$key], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($value !== null) {
+                $input[$key] = $value;
+            }
+        }
+
+        return $input;
     }
 
     private function syncAccessories(Request $request, EquipmentItem $item): void
