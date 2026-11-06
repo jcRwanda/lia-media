@@ -86,6 +86,7 @@ class MaterialRequestWebhookService
                 'qty_issued' => $item->qty_issued,
                 'qty_returned' => $item->qty_returned,
                 'status' => $item->status,
+                'added_at_pickup' => (bool) $item->added_at_pickup,
             ])->values()->all(),
         ];
 
@@ -129,6 +130,7 @@ class MaterialRequestWebhookService
             return false;
         }
 
+        $request->loadMissing('items.equipmentItem');
         $payload = [
             'event' => $event,
             'reference_code' => $request->reference_code,
@@ -140,6 +142,16 @@ class MaterialRequestWebhookService
             'needed_from' => $request->needed_from?->format('Y-m-d'),
             'return_by' => $request->return_by?->format('Y-m-d'),
             'updated_at' => $request->updated_at?->toIso8601String(),
+            'items' => $request->items->map(fn ($item) => [
+                'equipment_item_id' => $item->equipment_item_id,
+                'name' => $item->equipmentItem?->name,
+                'qty_requested' => $item->qty_requested,
+                'qty_approved' => $item->qty_approved,
+                'qty_issued' => $item->qty_issued,
+                'qty_returned' => $item->qty_returned,
+                'status' => $item->status,
+                'added_at_pickup' => (bool) $item->added_at_pickup,
+            ])->values()->all(),
         ];
 
         $body = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);

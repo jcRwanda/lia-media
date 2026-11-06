@@ -15,6 +15,7 @@ use App\Services\MaterialRequestAuditService;
 use App\Services\MaterialRequestDecisionService;
 use App\Services\MaterialRequestFormSchemaService;
 use App\Services\MaterialRequestService;
+use App\Services\MaterialRequestPickupItemService;
 use App\Services\MaterialRequestWebhookService;
 use App\Support\ImageNormalizer;
 use Illuminate\Http\JsonResponse;
@@ -33,6 +34,7 @@ class MaterialRequestController extends Controller
         private MaterialRequestService $files,
         private MaterialRequestWebhookService $webhooks,
         private MaterialRequestDecisionService $decisions,
+        private MaterialRequestPickupItemService $pickupItems,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -127,7 +129,7 @@ class MaterialRequestController extends Controller
             }
         }
 
-        $materialRequest->load(['items.equipmentItem.images', 'items.proofs', 'items.issuedBy:id,name', 'items.receivedBy:id,name', 'audits.actor', 'statusHistories.actor:id,name', 'cohort:id,name,code', 'apiClient:id,name', 'finalWorks', 'finalWorkReviewedBy']);
+        $materialRequest->load(['items.equipmentItem.images', 'items.equipmentItem.accessories', 'items.proofs', 'items.issuedBy:id,name', 'items.receivedBy:id,name', 'items.addedBy:id,name', 'audits.actor', 'statusHistories.actor:id,name', 'cohort:id,name,code', 'apiClient:id,name', 'finalWorks', 'finalWorkReviewedBy']);
 
         $payload = $materialRequest->toArray();
         $payload['source'] = $materialRequest->source ?? $materialRequest->apiClient?->name ?? 'Direct/Hosted form';
@@ -139,6 +141,8 @@ class MaterialRequestController extends Controller
             $data = $item->toArray();
             $data['issued_by'] = $item->issuedBy?->name;
             $data['received_by'] = $item->receivedBy?->name;
+            $data['added_by'] = $item->addedBy?->name;
+            $data['added_at_pickup'] = (bool) $item->added_at_pickup;
             $data['checks'] = EquipmentCheck::query()->with('actor:id,name')
                 ->where('material_request_item_id', $item->id)->orderBy('created_at')->get()->map->present()->values()->all();
             $data['issue_proof_urls'] = $item->proofs->where('type', 'issue')
@@ -337,6 +341,122 @@ class MaterialRequestController extends Controller
         }
 
         return response()->json(['request' => $materialRequest->load('items.equipmentItem')]);
+    }
+
+
+    public function pickupCatalog(Request $request, MaterialRequest $materialRequest): JsonResponse
+    {
+        if (! $request->user()?->canDo('material-requests.issue')) {
+            abort(403);
+        }
+
+        try {
+            $items = $this->pickupItems->catalog(
+                $materialRequest,
+                $request->query('q'),
+                (int) $request->query('limit', 40),
+            );
+        } catch (ValidationException $e) {
+            return response()->json(['message' => 'Validation failed', 'errors' => $e->errors()], 422);
+        }
+
+        return response()->json(['items' => $items]);
+    }
+
+    public function addItemAtPickup(Request $request, MaterialRequest $materialRequest): JsonResponse
+    {
+        if (! $request->user()?->canDo('material-requests.issue')) {
+            abort(403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'equipment_item_id' => ['nullable', 'integer', 'required_without:qr_token', 'exists:equipment_items,id'],
+            'qr_token' => ['nullable', 'string', 'required_without:equipment_item_id', 'min:20', 'max:40'],
+            'qty' => ['required', 'integer', 'min:1'],
+            'note' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['message' => 'Validation failed', 'errors' => $validator->errors()], 422);
+        }
+
+        try {
+            $equipmentItemId = (int) ($validator->validated()['equipment_item_id'] ?? 0);
+            if (! empty($validator->validated()['qr_token'])) {
+                $equipmentItemId = $this->pickupItems->resolveByQr($validator->validated()['qr_token'])->id;
+            }
+            $line = $this->pickupItems->add(
+                $materialRequest,
+                $request->user(),
+                $equipmentItemId,
+                (int) $validator->validated()['qty'],
+                $validator->validated()['note'] ?? null,
+            );
+        } catch (ValidationException $e) {
+            return response()->json(['message' => 'Validation failed', 'errors' => $e->errors()], 422);
+        }
+
+        $materialRequest->refresh()->load(['items.equipmentItem.images', 'items.equipmentItem.accessories', 'items.proofs', 'items.issuedBy:id,name', 'items.receivedBy:id,name', 'items.addedBy:id,name', 'statusHistories.actor:id,name']);
+
+        return response()->json([
+            'item' => $this->presentPickupLine($line),
+            'request' => [
+                'id' => $materialRequest->id,
+                'status' => $materialRequest->status,
+                'items' => $materialRequest->items->map(fn ($item) => $this->presentPickupLine($item))->values(),
+                'status_history' => $materialRequest->statusHistories->map(fn ($h) => $h->present())->values(),
+            ],
+        ], 201);
+    }
+
+    public function removePickupItem(Request $request, MaterialRequest $materialRequest, MaterialRequestItem $item): JsonResponse
+    {
+        if (! $request->user()?->canDo('material-requests.issue')) {
+            abort(403);
+        }
+
+        try {
+            $this->pickupItems->remove($materialRequest, $request->user(), $item);
+        } catch (ValidationException $e) {
+            return response()->json(['message' => 'Validation failed', 'errors' => $e->errors()], 422);
+        }
+
+        $materialRequest->refresh()->load(['items.equipmentItem.images', 'items.equipmentItem.accessories', 'items.proofs', 'items.issuedBy:id,name', 'items.receivedBy:id,name', 'items.addedBy:id,name', 'statusHistories.actor:id,name']);
+
+        return response()->json([
+            'request' => [
+                'id' => $materialRequest->id,
+                'status' => $materialRequest->status,
+                'items' => $materialRequest->items->map(fn ($line) => $this->presentPickupLine($line))->values(),
+                'status_history' => $materialRequest->statusHistories->map(fn ($h) => $h->present())->values(),
+            ],
+        ]);
+    }
+
+    private function presentPickupLine(MaterialRequestItem $item): array
+    {
+        $item->loadMissing(['equipmentItem.images', 'equipmentItem.accessories', 'addedBy:id,name', 'issuedBy:id,name', 'receivedBy:id,name', 'proofs']);
+        $data = $item->toArray();
+        $data['added_at_pickup'] = (bool) $item->added_at_pickup;
+        $data['added_by'] = $item->addedBy?->name;
+        $data['issued_by'] = $item->issuedBy?->name;
+        $data['received_by'] = $item->receivedBy?->name;
+        if ($item->equipmentItem) {
+            $data['equipment_item'] = [
+                ...$item->equipmentItem->toArray(),
+                'images' => $item->equipmentItem->images->map(fn ($image) => [
+                    'id' => $image->id,
+                    'name' => $image->name,
+                    'url' => $this->files->presign($image->path, $image->name),
+                ])->values()->all(),
+                'accessories' => $item->equipmentItem->accessories->map(fn ($a) => [
+                    'id' => $a->id,
+                    'name' => $a->name,
+                ])->values()->all(),
+            ];
+        }
+
+        return $data;
     }
 
     public function issue(Request $request, MaterialRequest $materialRequest): JsonResponse

@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
 import { useState } from 'react';
 import { ClipboardCheck, MessageCircle, PackageCheck, ScanLine, X } from 'lucide-react';
+import { AddAtPickupPanel } from '@/components/AddAtPickupPanel';
 
 type Tab = 'to_hand_out' | 'out_now' | 'due_overdue' | 'history';
 
@@ -31,9 +32,11 @@ interface BookingItem {
     returned_at: string | null;
     issued_by: string | null;
     received_by: string | null;
+    added_at_pickup?: boolean;
+    added_by?: string | null;
     issue_proof_urls: string[];
     return_proof_urls: string[];
-    equipment_item: { id: number; name: string; serial_number?: string | null; condition?: string | null } | null;
+    equipment_item: { id: number; name: string; serial_number?: string | null; condition?: string | null; accessories?: { id: number; name: string }[] } | null;
 }
 
 interface Booking {
@@ -229,7 +232,14 @@ export default function StorekeeperPortalPage() {
                                         <div key={item.id} className="rounded-lg border border-neutral-100 bg-neutral-50 p-2">
                                             <div className="flex items-start justify-between gap-2">
                                                 <div>
-                                                    <div className="font-medium">{item.equipment_item?.name || 'Item'}</div>
+                                                    <div className="font-medium">
+                                                        {item.equipment_item?.name || 'Item'}
+                                                        {item.added_at_pickup ? (
+                                                            <span className="ml-1 rounded-full bg-lia-50 px-1.5 py-0.5 text-[10px] font-semibold text-lia-700">
+                                                                Added at pickup{item.added_by ? ` by ${item.added_by}` : ''}
+                                                            </span>
+                                                        ) : null}
+                                                    </div>
                                                     <div className="text-xs text-neutral-500">
                                                         Requested {item.qty_requested}
                                                         {item.qty_approved != null ? ` · Approved ${item.qty_approved}` : ''}
@@ -312,7 +322,14 @@ export default function StorekeeperPortalPage() {
                                     <div key={item.id} className="space-y-2 rounded-lg border border-neutral-200 p-3">
                                         <div className="flex items-center justify-between gap-2">
                                             <div>
-                                                <div className="text-sm font-medium">{item.equipment_item?.name || 'Item'}</div>
+                                                <div className="text-sm font-medium">
+                                                    {item.equipment_item?.name || 'Item'}
+                                                    {item.added_at_pickup ? (
+                                                        <span className="ml-1 rounded-full bg-lia-50 px-1.5 py-0.5 text-[10px] font-semibold text-lia-700">
+                                                            Added at pickup{item.added_by ? ` by ${item.added_by}` : ''}
+                                                        </span>
+                                                    ) : null}
+                                                </div>
                                                 <div className="text-xs text-neutral-500">
                                                     {action.type === 'issue'
                                                         ? `Approved quantity: ${item.qty_approved ?? item.qty_requested}`
@@ -348,6 +365,38 @@ export default function StorekeeperPortalPage() {
                                 );
                             })}
                         </div>
+
+                        {action.type === 'issue' ? (
+                            <div className="mt-3">
+                                <AddAtPickupPanel
+                                    requestId={action.booking.id}
+                                    items={action.booking.items}
+                                    onChanged={async () => {
+                                        const refreshed = await api<BookingsResponse>(`/storekeeper/bookings?tab=${tab}`);
+                                        const next = refreshed.bookings.find((b) => b.id === action.booking.id);
+                                        if (!next) return;
+                                        const formsNext: Record<number, ItemForm> = { ...forms };
+                                        next.items.forEach((item) => {
+                                            if (formsNext[item.id]) return;
+                                            const outstanding = (item.qty_approved ?? item.qty_requested) - (item.qty_issued ?? 0);
+                                            formsNext[item.id] = {
+                                                id: item.id,
+                                                qty: String(Math.max(outstanding, 0)),
+                                                condition: '',
+                                                notes: '',
+                                                files: [],
+                                            };
+                                        });
+                                        Object.keys(formsNext).forEach((id) => {
+                                            if (!next.items.some((item) => item.id === Number(id))) delete formsNext[Number(id)];
+                                        });
+                                        setForms(formsNext);
+                                        setAction({ booking: next, type: 'issue' });
+                                        qc.setQueryData(['storekeeper-bookings', tab], refreshed);
+                                    }}
+                                />
+                            </div>
+                        ) : null}
 
                         <div className="mt-4 flex justify-end gap-2">
                             <Button variant="secondary" onClick={() => setAction(null)}>

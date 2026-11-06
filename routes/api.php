@@ -207,6 +207,9 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
             Route::post('/material-requests/{materialRequest}/final-work/request-changes', [MaterialRequestController::class, 'requestFinalWorkChanges']);
         });
         Route::middleware('can:material-requests.issue')->group(function () {
+            Route::get('/material-requests/{materialRequest}/pickup-catalog', [MaterialRequestController::class, 'pickupCatalog']);
+            Route::post('/material-requests/{materialRequest}/items', [MaterialRequestController::class, 'addItemAtPickup']);
+            Route::delete('/material-requests/{materialRequest}/items/{item}', [MaterialRequestController::class, 'removePickupItem']);
             Route::post('/material-requests/{materialRequest}/issue', [MaterialRequestController::class, 'issue']);
         });
         Route::middleware('can:material-requests.return')->group(function () {

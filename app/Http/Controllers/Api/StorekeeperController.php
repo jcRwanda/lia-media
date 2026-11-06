@@ -25,7 +25,7 @@ class StorekeeperController extends Controller
         }
 
         $today = now()->toDateString();
-        $with = ['items.equipmentItem.images', 'items.proofs', 'items.issuedBy:id,name', 'items.receivedBy:id,name', 'approvedBy:id,name', 'apiClient:id,name'];
+        $with = ['items.equipmentItem.images', 'items.equipmentItem.accessories', 'items.proofs', 'items.issuedBy:id,name', 'items.receivedBy:id,name', 'items.addedBy:id,name', 'approvedBy:id,name', 'apiClient:id,name'];
 
         $toHandOut = MaterialRequest::query()
             ->with($with)
@@ -95,7 +95,7 @@ class StorekeeperController extends Controller
         $startOfWeek = now()->startOfWeek()->toDateString();
         $endOfWeek = now()->endOfWeek()->toDateString();
 
-        $with = ['items.equipmentItem.images', 'items.proofs', 'items.issuedBy:id,name', 'items.receivedBy:id,name', 'approvedBy:id,name', 'apiClient:id,name'];
+        $with = ['items.equipmentItem.images', 'items.equipmentItem.accessories', 'items.proofs', 'items.issuedBy:id,name', 'items.receivedBy:id,name', 'items.addedBy:id,name', 'approvedBy:id,name', 'apiClient:id,name'];
 
         // To hand out today (approved, needed_from null or <= today)
         $toHandOutToday = MaterialRequest::query()
@@ -274,6 +274,8 @@ class StorekeeperController extends Controller
             $data = $item->toArray();
             $data['issued_by'] = $item->issuedBy?->name;
             $data['received_by'] = $item->receivedBy?->name;
+            $data['added_by'] = $item->addedBy?->name;
+            $data['added_at_pickup'] = (bool) $item->added_at_pickup;
             $data['issue_proof_urls'] = $item->proofs
                 ->where('type', 'issue')
                 ->map(fn ($p) => $this->files->presign($p->path, $p->name))

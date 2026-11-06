@@ -530,6 +530,7 @@ class MaterialRequestPublicController extends Controller
                 'qty_requested' => $item->qty_requested,
                 'qty_approved' => $item->qty_approved,
                 'status' => $item->status,
+                'added_at_pickup' => (bool) $item->added_at_pickup,
             ])->values(),
         ];
     }
