@@ -5,6 +5,7 @@ import { buildMaterialRequestWhatsappLink, formatDate } from '@/lib/utils';
 import { ProofUploader } from '@/components/ProofUploader';
 import { useState } from 'react';
 import { MessageCircle } from 'lucide-react';
+import { AddAtPickupPanel } from '@/components/AddAtPickupPanel';
 
 const EMPTY_FILES: File[] = [];
 
@@ -228,7 +229,14 @@ export default function MaterialRequestDetailPage() {
                         {(data.items||[]).map((it: any) => (
                             <tr key={it.id} className="border-t">
                                 <td className="p-2">
-                                    <div>{it.equipment_item?.name}</div>
+                                    <div>
+                                        {it.equipment_item?.name}
+                                        {it.added_at_pickup ? (
+                                            <span className="ml-1 rounded-full bg-lia-50 px-1.5 py-0.5 text-[10px] font-semibold text-lia-700">
+                                                Added at pickup{it.added_by ? ` by ${it.added_by}` : ''}
+                                            </span>
+                                        ) : null}
+                                    </div>
                                     {it.issued_at ? <div className="text-[11px] text-neutral-500">Handed out {formatDate(it.issued_at)}{it.issued_by ? ` by ${it.issued_by}` : ''}</div> : null}
                                     {it.returned_at ? <div className="text-[11px] text-neutral-500">Checked in {formatDate(it.returned_at)}{it.received_by ? ` by ${it.received_by}` : ''}</div> : null}
                                     {(it.checks || []).map((c: any) => (
@@ -295,6 +303,11 @@ export default function MaterialRequestDetailPage() {
             {data.status === 'approved' && (
                 <div className="border rounded p-3 space-y-2">
                     <div className="font-medium">Issue (storekeeper) - photo proof required</div>
+                    <AddAtPickupPanel
+                        requestId={Number(id)}
+                        items={data.items || []}
+                        onChanged={() => qc.invalidateQueries({ queryKey: ['material-request', id] })}
+                    />
                     {(data.items||[]).map((it: any, idx: number) => (
                         <div key={it.id} className="grid grid-cols-1 sm:grid-cols-4 gap-2 items-center">
                             <div className="text-sm">{it.equipment_item?.name}</div>

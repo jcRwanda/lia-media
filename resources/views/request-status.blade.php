@@ -42,6 +42,8 @@
         issued: ['Equipment issued', 'bg-blue-100 text-blue-800'],
         returned: ['Returned', 'bg-gray-100 text-gray-800'],
         closed: ['Closed', 'bg-gray-100 text-gray-800'],
+        pickup_item_added: ['Added at pickup', 'bg-lia-50 text-lia-700'],
+        pickup_item_removed: ['Removed pickup add', 'bg-gray-100 text-gray-700'],
     };
     const flow = [['submitted', 'Submitted'], ['approved', 'Approved'], ['issued', 'Picked up'], ['returned', 'Returned']];
     function renderProgress(status) {
@@ -70,7 +72,7 @@
             }
         }
         html += '<table class="w-full text-sm mt-4"><thead><tr class="text-left text-xs uppercase tracking-wide text-gray-500"><th>Item</th><th>Requested</th><th>Approved</th></tr></thead><tbody>'
-            + r.items.map(i => `<tr class="border-t border-gray-100"><td class="py-2 font-medium">${esc(i.name)}</td><td>${esc(i.qty_requested)}</td><td>${esc(i.qty_approved ?? '-')}</td></tr>`).join('')
+            + r.items.map(i => `<tr class="border-t border-gray-100"><td class="py-2 font-medium">${esc(i.name)}${i.added_at_pickup ? ' <span class="ml-1 rounded-full bg-lia-50 px-2 py-0.5 text-[10px] font-semibold text-lia-700">Added at pickup</span>' : ''}</td><td>${esc(i.qty_requested)}</td><td>${esc(i.qty_approved ?? '-')}</td></tr>`).join('')
             + '</tbody></table>';
         $('box').innerHTML = html;
 

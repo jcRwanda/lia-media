@@ -20,6 +20,9 @@ class MaterialRequestItem extends Model
         'qty_returned',
         'status',
         'note',
+        'added_at_pickup',
+        'added_by',
+        'added_at',
         'issue_proof_path',
         'issue_condition',
         'issued_at',
@@ -37,6 +40,8 @@ class MaterialRequestItem extends Model
             'qty_approved' => 'integer',
             'qty_issued' => 'integer',
             'qty_returned' => 'integer',
+            'added_at_pickup' => 'boolean',
+            'added_at' => 'datetime',
             'issued_at' => 'datetime',
             'returned_at' => 'datetime',
         ];
@@ -50,6 +55,11 @@ class MaterialRequestItem extends Model
     public function equipmentItem(): BelongsTo
     {
         return $this->belongsTo(EquipmentItem::class);
+    }
+
+    public function addedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'added_by');
     }
 
     public function issuedBy(): BelongsTo
