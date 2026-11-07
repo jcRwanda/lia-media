@@ -551,6 +551,9 @@ loveinarts-web PR 6 already sends `alumni_certificate_exempt_user`, `alumni_cert
 php artisan test --compact tests/Feature/AlumniCertificateGrandfatherTest.php
 ```
 Do not replay a proof against production and do not submit a real alumni booking from this change.
+
+## Validation diagnostics
+API validation failures, including material-request submit, now return `correlation_id` and write one warning: `API validation failed.` The context is `correlation_id`, `status`, `fields`, `method`, and `route`. It does not include submitted values, files, headers, or the request body. To see why a portal submit returned 422, match the response `correlation_id` in the log and read `fields` (for example `certificate` or `items.0.qty`). The 14:08 failure from the previous deploy was not logged and cannot be reconstructed.
 Rolling back removes the stored private ID/signature references and prefill secrets. The R2 objects themselves are not
 deleted by the migration; remove the `material-requests/id-documents/` and `material-requests/signatures/` prefixes
 manually if required.

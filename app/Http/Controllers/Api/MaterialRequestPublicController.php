@@ -21,6 +21,7 @@ use App\Services\MaterialRequestService;
 use App\Services\MaterialRequestWebhookService;
 use App\Storage\ObjectStorage;
 use App\Storage\R2ObjectStorage;
+use App\Support\ApiValidationFailure;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -42,6 +43,7 @@ class MaterialRequestPublicController extends Controller
         private MaterialRequestWebhookService $webhooks,
         private MaterialRequestDecisionService $decisions,
         private AlumniCertificateExemptVerifier $certificateExempt,
+        private ApiValidationFailure $validationFailures,
     ) {}
 
     /**
@@ -230,7 +232,7 @@ class MaterialRequestPublicController extends Controller
 
         $validator = Validator::make($data, $rules);
         if ($validator->fails()) {
-            return response()->json(['message' => 'Validation failed', 'errors' => $validator->errors()], 422);
+            return $this->validationFailures->response($request, $validator->errors());
         }
 
         $validated = $validator->validated();
@@ -555,7 +557,7 @@ class MaterialRequestPublicController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json(['message' => 'Validation failed', 'errors' => $validator->errors()], 422);
+            return $this->validationFailures->response($request, $validator->errors());
         }
 
         $materialRequest = MaterialRequest::query()
@@ -686,7 +688,7 @@ class MaterialRequestPublicController extends Controller
 
         $allowed = config('material-requests.final_work_allowed_mimes', []);
         if (! empty($allowed) && ! in_array($data['content_type'], $allowed, true)) {
-            return response()->json(['message' => 'Validation failed', 'errors' => ['content_type' => ['File type not allowed.']]], 422);
+            return $this->validationFailures->response($request, ['content_type' => ['File type not allowed.']]);
         }
 
         $ext = pathinfo($data['filename'], PATHINFO_EXTENSION);
@@ -753,7 +755,7 @@ class MaterialRequestPublicController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json(['message' => 'Validation failed', 'errors' => $validator->errors()], 422);
+            return $this->validationFailures->response($request, $validator->errors());
         }
 
         $data = $validator->validated();

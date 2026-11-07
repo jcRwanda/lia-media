@@ -65,6 +65,7 @@ class MaterialRequestPlatformController extends Controller
                         'type' => 'object',
                         'properties' => [
                             'message' => ['type' => 'string', 'example' => 'Validation failed'],
+                            'correlation_id' => ['type' => 'string', 'format' => 'uuid', 'description' => 'Matches the server validation log. The log stores this id, the status, and field names only.'],
                             'errors' => [
                                 'type' => 'object',
                                 'additionalProperties' => [

@@ -35,6 +35,7 @@ Errors use HTTP status codes and this shape:
 ```json
 {
   "message": "Validation failed",
+  "correlation_id": "6f1c0b4e-1c2d-4a7e-9b3a-0d5e8f7a6b2c",
   "errors": {
     "needed_from": ["The selected dates overlap a blocked period (Maintenance)."],
     "items.0.qty": ["Only 2 of Camera available on 2026-11-03 (requested 5)."]
@@ -43,7 +44,9 @@ Errors use HTTP status codes and this shape:
 ```
 
 `401` means a missing/unknown/disabled key. `403` means the key is valid but the browser origin does not match.
-`422` covers validation, booking rules, blocked dates and stock conflicts.
+`422` covers validation, booking rules, blocked dates and stock conflicts. Each API validation failure is logged as
+`API validation failed.` with `correlation_id`, HTTP status, route, and the failing field names. Submitted values,
+files, headers, and the request body are not written to that log. Quote `correlation_id` when asking which field failed.
 
 ## Endpoints
 
