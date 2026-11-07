@@ -40,7 +40,7 @@ class MaterialRequestPickupItemService
      */
     public function catalog(MaterialRequest $request, ?string $search = null, int $limit = 40): array
     {
-        $this->assertApproved($request);
+        $this->assertOpenForPickup($request);
 
         $from = $this->from($request);
         $to = $this->to($request);
@@ -107,7 +107,7 @@ class MaterialRequestPickupItemService
 
     public function add(MaterialRequest $request, User $actor, int $equipmentItemId, int $qty, ?string $note = null): MaterialRequestItem
     {
-        $this->assertApproved($request);
+        $this->assertOpenForPickup($request);
         if ($qty < 1) {
             throw ValidationException::withMessages(['qty' => ['Quantity must be at least 1.']]);
         }
@@ -175,7 +175,7 @@ class MaterialRequestPickupItemService
 
     public function remove(MaterialRequest $request, User $actor, MaterialRequestItem $line): void
     {
-        $this->assertApproved($request);
+        $this->assertOpenForPickup($request);
 
         if ($line->material_request_id !== $request->id) {
             throw ValidationException::withMessages(['item' => ['Item does not belong to this request.']]);
@@ -216,10 +216,70 @@ class MaterialRequestPickupItemService
         return $item;
     }
 
-    private function assertApproved(MaterialRequest $request): void
+    /**
+     * Storekeeper explicitly swaps one unissued line to another catalog unit.
+     * Borrower QR confirmation cannot call this, including when the booked unit was deleted.
+     */
+    public function replace(MaterialRequest $request, User $actor, MaterialRequestItem $line, int $equipmentItemId): MaterialRequestItem
     {
-        if ($request->status !== 'approved') {
-            throw ValidationException::withMessages(['status' => ['Items can only be added at pickup while the request is approved.']]);
+        $this->assertOpenForPickup($request);
+        if ($line->material_request_id !== $request->id) {
+            throw ValidationException::withMessages(['item' => ['Item does not belong to this request.']]);
+        }
+        if ($line->qty_issued || $line->status === 'issued' || $line->issued_at) {
+            throw ValidationException::withMessages(['item' => ['This line has already been issued and cannot be replaced.']]);
+        }
+        if ((int) $line->equipment_item_id === $equipmentItemId) {
+            throw ValidationException::withMessages(['equipment_item_id' => ['That is already the unit on this line.']]);
+        }
+
+        return DB::transaction(function () use ($request, $actor, $line, $equipmentItemId) {
+            $replacement = EquipmentItem::query()->lockForUpdate()->find($equipmentItemId);
+            if (! $replacement) {
+                throw ValidationException::withMessages(['equipment_item_id' => ['Equipment item not found.']]);
+            }
+            if ($this->isUnavailable($replacement)) {
+                throw ValidationException::withMessages(['equipment_item_id' => ['This item is unavailable or needs repair.']]);
+            }
+            if ($request->items()->where('equipment_item_id', $replacement->id)->where('id', '!=', $line->id)->lockForUpdate()->exists()) {
+                throw ValidationException::withMessages(['equipment_item_id' => ['This item is already on the request.']]);
+            }
+
+            $fromId = (int) $line->equipment_item_id;
+            $fromName = EquipmentItem::withTrashed()->find($fromId)?->name ?? 'removed unit';
+            $lines = $request->items()->get()->map(fn (MaterialRequestItem $existing) => [
+                'equipment_item_id' => $existing->id === $line->id ? $replacement->id : (int) $existing->equipment_item_id,
+                'qty' => (int) ($existing->qty_approved ?? $existing->qty_requested),
+            ])->all();
+            $this->availability->assertCanBook(
+                $lines,
+                $this->from($request),
+                $this->to($request),
+                $request->id,
+                enforceWindowRules: false,
+                lockItems: true,
+            );
+
+            $line->update(['equipment_item_id' => $replacement->id]);
+            $historyNote = 'Replaced at pickup by '.$actor->name.': '.$fromName.' → '.$replacement->name;
+            $this->decisions->record($request, $request->status, 'pickup_item_replaced', $historyNote, $actor);
+            $this->audit->log($request, 'equipment.pickup_item_replaced', [
+                'material_request_item_id' => $line->id,
+                'from_equipment_item_id' => $fromId,
+                'to_equipment_item_id' => $replacement->id,
+                'from_equipment_name' => $fromName,
+                'to_equipment_name' => $replacement->name,
+            ], $actor);
+            $this->webhooks->dispatchEvent($request->fresh(['apiClient']), 'material_request.pickup_item_replaced');
+
+            return $line->fresh(['equipmentItem.images', 'equipmentItem.accessories', 'addedBy:id,name']);
+        });
+    }
+
+    private function assertOpenForPickup(MaterialRequest $request): void
+    {
+        if (! in_array($request->status, ['approved', 'issued'], true)) {
+            throw ValidationException::withMessages(['status' => ['Items can only be added at pickup while the request is approved or being handed out.']]);
         }
         if (! $request->needed_from || ! $request->return_by) {
             throw ValidationException::withMessages(['needed_from' => ['This request is missing pick-up or return dates.']]);

@@ -302,7 +302,7 @@ export default function MaterialRequestDetailPage() {
                 </div>
             )}
 
-            {data.status === 'approved' && (
+            {(data.status === 'approved' || (data.status === 'issued' && (data.items || []).some((it: any) => !it.qty_issued))) && (
                 <div className="border rounded p-3 space-y-2">
                     <div className="font-medium">Issue (storekeeper) - photo proof required</div>
                     <AddAtPickupPanel

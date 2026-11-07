@@ -26,6 +26,7 @@ interface BookingItem {
     qty_approved: number | null;
     qty_issued: number | null;
     qty_returned: number | null;
+    status?: string;
     issue_condition: string | null;
     return_condition: string | null;
     issued_at: string | null;
@@ -192,7 +193,8 @@ export default function StorekeeperPortalPage() {
             <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
                 {(data?.bookings || []).map((booking) => {
                     const whatsapp = buildMaterialRequestWhatsappLink(booking);
-                    const canHandOut = booking.status === 'approved';
+                    const hasUnissued = booking.items.some((item) => !(item.qty_issued != null && item.qty_issued > 0) && item.status !== 'issued');
+                    const canHandOut = booking.status === 'approved' || (booking.status === 'issued' && hasUnissued);
                     const canCheckIn = booking.status === 'issued' || booking.status === 'returned';
                     return (
                         <Card key={booking.id}>
