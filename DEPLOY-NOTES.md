@@ -497,6 +497,9 @@ Smoke test:
 ```bash
 php artisan migrate:rollback --step=2   # drops the new api_clients and material_requests columns
 ```
+Rolling back removes the stored private ID/signature references and prefill secrets. The R2 objects themselves are not
+deleted by the migration; remove the `material-requests/id-documents/` and `material-requests/signatures/` prefixes
+manually if required.
 
 ---
 
@@ -554,6 +557,13 @@ Do not replay a proof against production and do not submit a real alumni booking
 
 ## Validation diagnostics
 API validation failures, including material-request submit, now return `correlation_id` and write one warning: `API validation failed.` The context is `correlation_id`, `status`, `fields`, `method`, and `route`. It does not include submitted values, files, headers, or the request body. To see why a portal submit returned 422, match the response `correlation_id` in the log and read `fields` (for example `certificate` or `items.0.qty`). The 14:08 failure from the previous deploy was not logged and cannot be reconstructed.
-Rolling back removes the stored private ID/signature references and prefill secrets. The R2 objects themselves are not
-deleted by the migration; remove the `material-requests/id-documents/` and `material-requests/signatures/` prefixes
-manually if required.
+
+## Deploy onto production `321aec0`
+Production history is `5445e14` → `919c520` → `30ab803` → `6775322` → `321aec0`. Do not reset it. From a clean checkout of `321aec0`, apply these two patches in order:
+
+```bash
+git apply deploy/logging-73c5b31-on-321aec0.patch
+git apply deploy/qr-safety-on-321aec0-plus-73c5b31.patch
+```
+
+The logging patch matches commit `73c5b31`. The QR patch applies only after that. It removes borrower remapping, keeps exact-item confirmation, and keeps partial hand-out for `approved` and `issued` requests. A deleted stand-in changes only when a storekeeper calls `POST /api/material-requests/{id}/items/{line}/replace`. There is no new migration in the QR patch. Do not confirm a live pickup or submit a live booking to verify it.
