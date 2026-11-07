@@ -35,6 +35,7 @@ Errors use HTTP status codes and this shape:
 ```json
 {
   "message": "Validation failed",
+  "correlation_id": "6f1c0b4e-1c2d-4a7e-9b3a-0d5e8f7a6b2c",
   "errors": {
     "needed_from": ["The selected dates overlap a blocked period (Maintenance)."],
     "items.0.qty": ["Only 2 of Camera available on 2026-11-03 (requested 5)."]
@@ -43,7 +44,9 @@ Errors use HTTP status codes and this shape:
 ```
 
 `401` means a missing/unknown/disabled key. `403` means the key is valid but the browser origin does not match.
-`422` covers validation, booking rules, blocked dates and stock conflicts.
+`422` covers validation, booking rules, blocked dates and stock conflicts. Each API validation failure is logged as
+`API validation failed.` with `correlation_id`, HTTP status, route, and the failing field names. Submitted values,
+files, headers, and the request body are not written to that log. Quote `correlation_id` when asking which field failed.
 
 ## Endpoints
 
@@ -239,6 +242,60 @@ Submission rules applied by the server:
 - `client` and `alumni` need an ID document; `trainee`/`alumni` need a `cohort_id`.
 - The request is recorded with `source` = the API client name and `source_detail` from the payload.
   Requests from the hosted/plain form use `Direct/Hosted form`.
+- Alumni still need a graduation certificate once (`certificate` upload or `certificate_url`) when
+  `MATERIAL_REQUEST_ALUMNI_CERT_REQUIRED_API=true`. Keep that flag on. A previous certificate for the same
+  email is reused. The hosted form never skips it.
+
+### Grandfathered alumni (signed exemption)
+
+Current portal accounts that were already registered when the certificate rule started may book without a file.
+The portal keeps that fact (`users.alumni_certificate_grandfathered`) and, only for those accounts, adds four
+fields to the server-to-server submit. New alumni omit the fields and must send a certificate once.
+
+```json
+{
+  "alumni_certificate_exempt_user": "42",
+  "alumni_certificate_exempt_email": "alum@example.com",
+  "alumni_certificate_exempt_at": 1730000000,
+  "alumni_certificate_exempt_sig": "<hex hmac>"
+}
+```
+
+The signature is hex HMAC-SHA256 (optional `sha256=` prefix) of this exact string, using the portal API key
+(`LIA_MEDIA_API_KEY` / `X-LIA-Key`):
+
+```text
+alumni-certificate-grandfathered|{portal user id}|{account email}|{unix time}
+```
+
+`{account email}` is the exact `alumni_certificate_exempt_email` value (do not lowercase it inside the HMAC).
+`{portal user id}` is the portal user id as digits or a short token. `{unix time}` is 10-digit Unix seconds.
+The proof is valid for 600 seconds and is rejected when it is more than 30 seconds in the future.
+
+Media accepts the booking only when all of the following hold. Anything else is the normal certificate error;
+a boolean such as `alumni_certificate_exempt=true` does nothing.
+
+- The request authenticated as an active API client with `allows_alumni_certificate_exempt` enabled.
+  Other clients, the hosted form, and anonymous calls cannot exempt.
+- The HMAC matches that client's decrypted `prefill_secret` (the same value as the API key when the client
+  was created by `material-requests:client`, or after that secret is backfilled).
+- The submitted booking `email` matches `alumni_certificate_exempt_email` after trim and lowercase.
+
+A `201` then includes `alumni_certificate_reminder` and stores `certificate_source=grandfathered` with no file.
+That source is not reused as a certificate; the next booking needs a new proof or a stored file.
+`form-schema` still marks `certificate` required. The portal must not block grandfathered accounts on that
+flag; it shows a non-blocking reminder and sends the proof instead.
+
+Enable the client and check the secret match without printing either secret:
+
+```bash
+php artisan material-requests:alumni-certificate-exempt
+php artisan material-requests:alumni-certificate-exempt "Learning Portal" --enable
+```
+
+`prefill_secret_matches_api_key=yes` means proofs signed with `LIA_MEDIA_API_KEY` will verify. `no` means the
+stored prefill secret and the API key have diverged; set `prefill_secret` to that same API key on the server
+(do not commit or log it). The portal payload does not change.
 
 ### `GET /{reference}`
 

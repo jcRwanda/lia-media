@@ -8,6 +8,7 @@ use App\Models\MaterialRequestItem;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -238,5 +239,31 @@ class MaterialRequestPickupAddTest extends TestCase
         $this->getJson('/api/v1/material-requests/status/'.$booking->uuid)
             ->assertOk()
             ->assertJsonFragment(['name' => 'Cable Kit', 'added_at_pickup' => true]);
+    }
+
+    public function test_partially_issued_request_can_still_be_added_to_and_issued(): void
+    {
+        Storage::fake(config('filesystems.default'));
+        Mail::fake();
+        $storekeeper = User::factory()->create(['role' => 'storekeeper']);
+        $booking = $this->booking(['status' => 'issued']);
+        $extra = EquipmentItem::factory()->create(['total_qty' => 2, 'condition' => 'good', 'name' => 'Second Light']);
+
+        $lineId = $this->actingAs($storekeeper)->postJson("/api/material-requests/{$booking->id}/items", [
+            'equipment_item_id' => $extra->id,
+            'qty' => 1,
+        ])->assertCreated()->json('item.id');
+
+        $this->actingAs($storekeeper)->post("/api/material-requests/{$booking->id}/issue", [
+            'items' => [[
+                'id' => $lineId,
+                'qty_issued' => 1,
+                'issue_proofs' => [UploadedFile::fake()->create('c.jpg', 40, 'image/jpeg')],
+            ]],
+        ])->assertOk();
+
+        $this->assertSame('issued', $booking->fresh()->status);
+        $this->assertSame($extra->id, MaterialRequestItem::query()->find($lineId)?->equipment_item_id);
+        $this->assertSame(1, MaterialRequestItem::query()->find($lineId)?->qty_issued);
     }
 }

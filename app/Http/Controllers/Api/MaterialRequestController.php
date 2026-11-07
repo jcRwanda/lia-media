@@ -14,8 +14,8 @@ use App\Models\MaterialRequestItem;
 use App\Services\MaterialRequestAuditService;
 use App\Services\MaterialRequestDecisionService;
 use App\Services\MaterialRequestFormSchemaService;
-use App\Services\MaterialRequestService;
 use App\Services\MaterialRequestPickupItemService;
+use App\Services\MaterialRequestService;
 use App\Services\MaterialRequestWebhookService;
 use App\Support\ImageNormalizer;
 use Illuminate\Http\JsonResponse;
@@ -343,7 +343,6 @@ class MaterialRequestController extends Controller
         return response()->json(['request' => $materialRequest->load('items.equipmentItem')]);
     }
 
-
     public function pickupCatalog(Request $request, MaterialRequest $materialRequest): JsonResponse
     {
         if (! $request->user()?->canDo('material-requests.issue')) {
@@ -409,6 +408,35 @@ class MaterialRequestController extends Controller
         ], 201);
     }
 
+    public function replacePickupItem(Request $request, MaterialRequest $materialRequest, MaterialRequestItem $item): JsonResponse
+    {
+        if (! $request->user()?->canDo('material-requests.issue')) {
+            abort(403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'equipment_item_id' => ['required', 'integer', 'exists:equipment_items,id'],
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['message' => 'Validation failed', 'errors' => $validator->errors()], 422);
+        }
+
+        try {
+            $line = $this->pickupItems->replace(
+                $materialRequest,
+                $request->user(),
+                $item,
+                (int) $validator->validated()['equipment_item_id'],
+            );
+        } catch (ValidationException $e) {
+            return response()->json(['message' => 'Validation failed', 'errors' => $e->errors()], 422);
+        }
+
+        return response()->json([
+            'item' => $this->presentPickupLine($line),
+        ]);
+    }
+
     public function removePickupItem(Request $request, MaterialRequest $materialRequest, MaterialRequestItem $item): JsonResponse
     {
         if (! $request->user()?->canDo('material-requests.issue')) {
@@ -465,7 +493,7 @@ class MaterialRequestController extends Controller
             abort(403);
         }
 
-        if (! in_array($materialRequest->status, ['approved'], true)) {
+        if (! in_array($materialRequest->status, ['approved', 'issued'], true)) {
             return response()->json(['message' => 'Invalid state transition'], 422);
         }
 

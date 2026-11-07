@@ -90,6 +90,8 @@ export default function AlumniBookingsPage() {
                             <div className="mt-2">
                                 {r.certificate_path || r.certificate_url ? (
                                     <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700"><Award className="h-3 w-3" />Certificate on file</span>
+                                ) : r.certificate_source === 'grandfathered' ? (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800"><Award className="h-3 w-3" />Grandfathered</span>
                                 ) : (
                                     <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-700"><Award className="h-3 w-3" />No certificate</span>
                                 )}

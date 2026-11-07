@@ -6,10 +6,12 @@ use App\Http\Middleware\MaterialRequestApiKeyAuth;
 use App\Http\Middleware\MaterialRequestClientAuth;
 use App\Http\Middleware\MaterialRequestCors;
 use App\Services\ShareService;
+use App\Support\ApiValidationFailure;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -34,4 +36,16 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
+        $exceptions->render(function (ValidationException $exception, Request $request) {
+            if (! $request->is('api/*') && ! $request->expectsJson()) {
+                return null;
+            }
+
+            return app(ApiValidationFailure::class)->response(
+                $request,
+                $exception->errors(),
+                $exception->status,
+                $exception->getMessage(),
+            );
+        });
     })->create();

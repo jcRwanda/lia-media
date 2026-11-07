@@ -132,4 +132,94 @@ class EquipmentQrTest extends TestCase
         $u = User::factory()->create(['role' => 'multimedia']);
         $this->actingAs($u)->getJson("/api/equipment-scan/{$item->qr_token}")->assertForbidden();
     }
+
+    public function test_confirm_explains_different_item_and_not_approved(): void
+    {
+        $listed = EquipmentItem::factory()->create(['name' => 'Canon R body']);
+        $scanned = EquipmentItem::factory()->create(['name' => 'Canon charge R', 'serial_number' => 'KEHB']);
+        $this->booking($listed, ['email' => 'assoumpta255@gmail.com', 'phone' => '+250787739837']);
+
+        $res = $this->postJson("/api/v1/qr/{$scanned->qr_token}/confirm", ['contact' => 'assoumpta255@gmail.com'])
+            ->assertStatus(422);
+        $this->assertSame('different_item', $res->json('reason'));
+        $this->assertStringContainsString('not on that list', $res->json('message'));
+        $this->assertStringContainsString('storekeeper', $res->json('message'));
+
+        $pendingItem = EquipmentItem::factory()->create();
+        $this->booking($pendingItem, [
+            'email' => 'waiting@example.com',
+            'status' => 'submitted',
+            'phone' => '0788111222',
+        ]);
+        $this->postJson("/api/v1/qr/{$pendingItem->qr_token}/confirm", ['contact' => 'waiting@example.com'])
+            ->assertStatus(422)
+            ->assertJsonPath('reason', 'not_approved');
+    }
+
+    public function test_canon_substitution_leaves_the_booking_unchanged(): void
+    {
+        $listed = EquipmentItem::factory()->create(['name' => 'Canon R body', 'serial_number' => 'BODY-1']);
+        $scanned = EquipmentItem::factory()->create(['name' => 'Canon charge R', 'serial_number' => 'KEHB']);
+        $mr = $this->booking($listed, ['email' => 'borrower@example.com', 'phone' => '0788123456']);
+        $line = $mr->items()->firstOrFail();
+
+        $this->postJson("/api/v1/qr/{$listed->qr_token}/confirm", ['contact' => 'borrower@example.com'])
+            ->assertOk()
+            ->assertJsonPath('booking.reference_code', $mr->reference_code);
+
+        $this->postJson("/api/v1/qr/{$scanned->qr_token}/confirm", ['contact' => 'borrower@example.com'])
+            ->assertStatus(422)
+            ->assertJsonPath('reason', 'different_item');
+
+        $this->assertSame($listed->id, $line->fresh()->equipment_item_id);
+        $this->assertDatabaseMissing('equipment_checks', [
+            'material_request_id' => $mr->id,
+            'equipment_item_id' => $scanned->id,
+        ]);
+        $this->assertDatabaseMissing('material_request_audits', [
+            'material_request_id' => $mr->id,
+            'action' => 'equipment.pickup_item_remapped',
+        ]);
+    }
+
+    public function test_deleted_unit_is_not_remapped_until_storekeeper_replaces_it(): void
+    {
+        $standIn = EquipmentItem::factory()->create(['name' => 'Camera battery chargers']);
+        $scanned = EquipmentItem::factory()->create(['name' => 'Canon charge R', 'serial_number' => 'KEHB', 'total_qty' => 2, 'condition' => 'good']);
+        $mr = $this->booking($standIn, ['email' => 'borrower@example.com', 'phone' => '0788123456']);
+        $line = $mr->items()->firstOrFail();
+        $standIn->delete();
+
+        $this->postJson("/api/v1/qr/{$scanned->qr_token}/confirm", ['contact' => 'borrower@example.com'])
+            ->assertStatus(422)
+            ->assertJsonPath('reason', 'replacement_required');
+
+        $this->assertSame($standIn->id, $line->fresh()->equipment_item_id);
+        $this->assertSame(0, EquipmentCheck::query()->count());
+
+        $this->postJson("/api/material-requests/{$mr->id}/items/{$line->id}/replace", [
+            'equipment_item_id' => $scanned->id,
+        ])->assertUnauthorized();
+
+        $storekeeper = User::factory()->create(['role' => 'storekeeper', 'name' => 'Sam Store']);
+        $this->actingAs($storekeeper)->postJson("/api/material-requests/{$mr->id}/items/{$line->id}/replace", [
+            'equipment_item_id' => $scanned->id,
+        ])->assertOk()->assertJsonPath('item.equipment_item_id', $scanned->id);
+
+        $this->assertSame($scanned->id, $line->fresh()->equipment_item_id);
+        $this->assertSame(0, EquipmentCheck::query()->where('type', 'pickup_confirm')->count());
+        $this->assertDatabaseHas('material_request_audits', [
+            'material_request_id' => $mr->id,
+            'action' => 'equipment.pickup_item_replaced',
+        ]);
+
+        $this->postJson("/api/v1/qr/{$scanned->qr_token}/confirm", ['contact' => 'borrower@example.com'])
+            ->assertOk()
+            ->assertJsonPath('booking.reference_code', $mr->reference_code);
+        $this->assertDatabaseHas('equipment_checks', [
+            'material_request_id' => $mr->id,
+            'equipment_item_id' => $scanned->id,
+            'type' => 'pickup_confirm',
+        ]);
+    }
 }
