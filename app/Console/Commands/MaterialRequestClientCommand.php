@@ -9,14 +9,14 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
-#[Signature('material-requests:client {name} {--origin=} {--webhook=}')]
+#[Signature('material-requests:client {name} {--origin=} {--webhook=} {--alumni-certificate-exempt : Allow signed grandfather proofs for this client}')]
 #[Description('Create an API client for material requests and output the plain key')]
 class MaterialRequestClientCommand extends Command
 {
     /**
      * Execute the console command.
      */
-    public function handle()
+    public function handle(): int
     {
         $name = $this->argument('name');
         $origin = $this->option('origin');
@@ -35,6 +35,7 @@ class MaterialRequestClientCommand extends Command
             'allowed_origin' => $origin,
             'webhook_url' => $webhook ?: null,
             'active' => true,
+            'allows_alumni_certificate_exempt' => (bool) $this->option('alumni-certificate-exempt'),
         ]);
 
         $this->info('API client created: '.$client->id);
@@ -45,6 +46,7 @@ class MaterialRequestClientCommand extends Command
         if ($webhook) {
             $this->line('Webhook URL: '.$webhook);
         }
+        $this->line('Alumni certificate exemption: '.($client->allows_alumni_certificate_exempt ? 'enabled' : 'disabled'));
         $this->line('X-LIA-Key / prefill secret: '.$key);
         $this->warn('Store this key securely; it is used for API calls and to sign prefill tokens, and will not be shown again.');
 

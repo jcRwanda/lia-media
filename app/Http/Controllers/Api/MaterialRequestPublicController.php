@@ -12,6 +12,7 @@ use App\Models\MaterialRequest;
 use App\Models\MaterialRequestFinalWork;
 use App\Models\MaterialRequestItem;
 use App\Models\User;
+use App\Services\AlumniCertificateExemptVerifier;
 use App\Services\EquipmentAvailabilityService;
 use App\Services\MaterialRequestAuditService;
 use App\Services\MaterialRequestDecisionService;
@@ -40,6 +41,7 @@ class MaterialRequestPublicController extends Controller
         private EquipmentAvailabilityService $availability,
         private MaterialRequestWebhookService $webhooks,
         private MaterialRequestDecisionService $decisions,
+        private AlumniCertificateExemptVerifier $certificateExempt,
     ) {}
 
     /**
@@ -315,8 +317,11 @@ class MaterialRequestPublicController extends Controller
             throw ValidationException::withMessages(['id_document' => 'Upload your ID (image or PDF).']);
         }
 
+        $apiClient = $request->attributes->get('api_client');
+        $apiClient = $apiClient instanceof ApiClient ? $apiClient : null;
+
         $certificate = $validated['requester_type'] === 'alumni'
-            ? $this->resolveCertificate($validated, $request->attributes->get('api_client') instanceof ApiClient)
+            ? $this->resolveCertificate($validated, $apiClient, $request)
             : null;
 
         $signature = $validated['signature'] instanceof UploadedFile
@@ -324,8 +329,6 @@ class MaterialRequestPublicController extends Controller
             : $this->files->storeSignature((string) $validated['signature']);
 
         $cohort = ! empty($validated['cohort_id']) ? Cohort::query()->find($validated['cohort_id']) : null;
-        $apiClient = $request->attributes->get('api_client');
-        $apiClient = $apiClient instanceof ApiClient ? $apiClient : null;
         $source = $apiClient?->name ?? 'Direct/Hosted form';
 
         $materialRequest = DB::transaction(function () use ($validated, $bookingLines, $neededFrom, $returnBy, $idDocument, $signature, $cohort, $apiClient, $source, $certificate) {
@@ -418,12 +421,17 @@ class MaterialRequestPublicController extends Controller
             // ignore mail failures
         }
 
-        return response()->json([
+        $body = [
             'message' => 'Request submitted',
             'reference_code' => $materialRequest->reference_code,
             'status' => $materialRequest->status,
             'status_url' => $this->decisions->statusUrl($materialRequest),
-        ], 201);
+        ];
+        if (($certificate['source'] ?? null) === AlumniCertificateExemptVerifier::SOURCE) {
+            $body['alumni_certificate_reminder'] = 'Booking accepted. A graduation certificate is not required for this grandfathered alumni account and does not block the request.';
+        }
+
+        return response()->json($body, 201);
     }
 
     /** Public decision/status page data, addressed by the unguessable request uuid. */
@@ -830,11 +838,12 @@ class MaterialRequestPublicController extends Controller
     /**
      * Alumni submit their graduation certificate once: a new upload or https link wins, otherwise the
      * certificate from their latest earlier alumni request (same email) is reused.
-     * Required on the hosted form; for API clients only when material-requests.alumni_certificate_required_for_api is on.
+     * Required on the hosted form. For API clients it is required when alumni_certificate_required_for_api
+     * is on, unless this opted-in client presents a valid grandfather proof.
      *
      * @return array{path: ?string, mime: ?string, name: ?string, url: ?string, source: string}|null
      */
-    private function resolveCertificate(array $validated, bool $viaApi): ?array
+    private function resolveCertificate(array $validated, ?ApiClient $apiClient, Request $request): ?array
     {
         $upload = $validated['certificate'] ?? null;
         if ($upload instanceof UploadedFile || (is_string($upload) && str_starts_with($upload, 'data:'))) {
@@ -855,7 +864,13 @@ class MaterialRequestPublicController extends Controller
                 'name' => $previous->certificate_name, 'url' => $previous->certificate_url, 'source' => 'reused',
             ];
         }
-        $required = ! $viaApi || (bool) config('material-requests.alumni_certificate_required_for_api', false);
+        if ($this->certificateExempt->grants($request, $apiClient, (string) $validated['email'])) {
+            return [
+                'path' => null, 'mime' => null, 'name' => null, 'url' => null,
+                'source' => AlumniCertificateExemptVerifier::SOURCE,
+            ];
+        }
+        $required = ! $apiClient instanceof ApiClient || (bool) config('material-requests.alumni_certificate_required_for_api', false);
         if ($required) {
             throw ValidationException::withMessages(['certificate' => 'Alumni must upload their graduation certificate (image or PDF). / Ohereza impamyabumenyi yawe.']);
         }

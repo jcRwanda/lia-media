@@ -497,6 +497,60 @@ Smoke test:
 ```bash
 php artisan migrate:rollback --step=2   # drops the new api_clients and material_requests columns
 ```
+
+---
+
+# Deploy notes — grandfathered alumni certificate exemption
+
+Branch: `cursor/alumni-certificate-grandfather-a53a`.
+
+## What changed
+- Alumni API bookings stay certificate-required (`MATERIAL_REQUEST_ALUMNI_CERT_REQUIRED_API=true`).
+- An opted-in API client may submit a 600-second HMAC proof instead of a file for grandfathered portal accounts.
+- Hosted forms, bare booleans, forged, expired, future, or email-mismatched proofs, and every other API client, still get the certificate error.
+- A stored upload or link is still saved and reused by email.
+- Staff alumni lists show "Grandfathered" instead of asking for a file when `certificate_source` is `grandfathered`.
+
+## Database
+```bash
+php artisan migrate --force
+```
+Adds `api_clients.allows_alumni_certificate_exempt` (default false). No existing client can exempt until it is enabled. This does not change booking rows.
+
+## Production history
+GitHub `main` at the time of this branch is `5445e14`. Production commit `6775322` is not on `origin`. Deploy by merging this branch onto the server tree. Do not reset the server to GitHub `main`.
+
+## Configure the alumni portal client
+Do not print or commit the API key.
+
+```bash
+php artisan material-requests:alumni-certificate-exempt
+php artisan material-requests:alumni-certificate-exempt "<exact alumni portal client name>" --enable
+```
+
+Read `prefill_secret_matches_api_key`:
+
+- `yes`: the decrypted `prefill_secret` is the API key. The portal keeps signing with `LIA_MEDIA_API_KEY`. No portal protocol change.
+- `no`: proofs signed with the API key will fail. On the server, set that client's `prefill_secret` to the same plaintext as its `X-LIA-Key` / the portal `LIA_MEDIA_API_KEY`, save, and run the command again until it prints `yes`. Still no portal payload change.
+
+Optional, defaults match the portal:
+
+```env
+MATERIAL_REQUEST_ALUMNI_CERT_REQUIRED_API=true
+MATERIAL_REQUEST_ALUMNI_CERT_EXEMPT_TTL=600
+MATERIAL_REQUEST_ALUMNI_CERT_EXEMPT_FUTURE_SKEW=30
+```
+
+Leave the required flag true. New clients can be created with `php artisan material-requests:client "Name" --alumni-certificate-exempt` if this client should be allowed to exempt.
+
+## Portal coordination
+loveinarts-web PR 6 already sends `alumni_certificate_exempt_user`, `alumni_certificate_exempt_email`, `alumni_certificate_exempt_at`, and `alumni_certificate_exempt_sig` for grandfathered users. Media verifies hex HMAC-SHA256 of `alumni-certificate-grandfathered|{user id}|{exact proof email}|{unix time}` with that client's `prefill_secret`. The booking email must match the proof email after trim and lowercase. The HMAC itself uses the proof email's original case. No portal change when the secret match above is `yes`.
+
+## Checks that do not touch production bookings
+```bash
+php artisan test --compact tests/Feature/AlumniCertificateGrandfatherTest.php
+```
+Do not replay a proof against production and do not submit a real alumni booking from this change.
 Rolling back removes the stored private ID/signature references and prefill secrets. The R2 objects themselves are not
 deleted by the migration; remove the `material-requests/id-documents/` and `material-requests/signatures/` prefixes
 manually if required.
