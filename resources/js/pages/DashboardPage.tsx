@@ -12,6 +12,7 @@ import { ProofUploader } from '@/components/ProofUploader';
 import { Input } from '@/components/ui/input';
 import { useState } from 'react';
 import { ClipboardCheck, PackageCheck, ScanLine } from 'lucide-react';
+import { OperationsReminders } from '@/components/OperationsReminders';
 
 type Dash = {
     review_counts: Record<string, number>; consent_issues: number; uploads_last_7_days: number; open_uploads: number; active_shares: number;
@@ -178,6 +179,7 @@ function StoreDashboard() {
     return (
         <div className="space-y-5">
             <PageHeader title="Storekeeper Dashboard" description="Today's hand-outs, returns, and inventory overview" actions={<Button asChild size="sm"><Link to="/storekeeper/scan"><ScanLine className="h-4 w-4" />Scan QR</Link></Button>} />
+            <OperationsReminders />
             {isLoading ? <p className="text-sm text-neutral-500">Loading…</p> : null}
             {s ? (
                 <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">

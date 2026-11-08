@@ -223,6 +223,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
         // Storekeeper portal
         Route::middleware('can:material-requests.view')->group(function () {
             Route::get('/storekeeper/bookings', [StorekeeperController::class, 'bookings']);
+            Route::get('/operations/reminders', [StorekeeperController::class, 'operationsReminders']);
         });
         Route::middleware('can:material-requests.issue')->group(function () {
             Route::get('/store/dashboard', [StorekeeperController::class, 'dashboard']);

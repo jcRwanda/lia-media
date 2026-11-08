@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { api } from '@/lib/api';
 import { useState } from 'react';
+import { OperationsReminders } from '@/components/OperationsReminders';
 
 function buildQuery(params: Record<string, any>) {
     const q = new URLSearchParams();
@@ -37,6 +38,7 @@ export default function MaterialRequestsPage() {
 
     return (
         <div className="p-4 space-y-4">
+            <OperationsReminders />
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <h1 className="text-xl font-semibold">Material / Equipment Requests</h1>
                 <div className="flex flex-wrap gap-2">
