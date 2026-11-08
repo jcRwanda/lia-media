@@ -201,6 +201,8 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
             Route::get('/material-requests/{materialRequest}/final-work/{finalWork}/file', [MaterialRequestController::class, 'finalWorkFile']);
         });
         Route::middleware('can:material-requests.manage')->group(function () {
+            Route::get('/material-requests/storekeeper-reminders', [MaterialRequestController::class, 'storekeeperReminders']);
+            Route::get('/material-requests/{materialRequest}/storekeeper-reminder', [MaterialRequestController::class, 'storekeeperReminder']);
             Route::post('/material-requests/{materialRequest}/approve', [MaterialRequestController::class, 'approve']);
             Route::post('/material-requests/{materialRequest}/reject', [MaterialRequestController::class, 'reject']);
             Route::post('/material-requests/{materialRequest}/request-changes', [MaterialRequestController::class, 'requestChanges']);

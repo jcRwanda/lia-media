@@ -176,10 +176,12 @@ class StorekeeperPortalTest extends TestCase
 
         $response = $this->actingAs($admin)->getJson("/api/material-requests/{$booking->id}")->assertOk();
 
-        $url = $response->json('request.whatsapp_url');
-        $this->assertStringStartsWith('https://wa.me/250788123456?text=', $url);
-        $this->assertStringContainsString(rawurlencode($booking->reference_code), $url);
-        $this->assertStringContainsString('Booking%20summary', $url);
+        $this->assertNull($response->json('request.whatsapp_url'));
+        $reminder = $this->actingAs($admin)->getJson('/api/material-requests/'.$booking->id.'/storekeeper-reminder?purpose=pickup');
+        $reminder->assertOk();
+        $this->assertTrue($reminder->json('setup_required'));
+        $this->assertNull($reminder->json('whatsapp_url'));
+        $this->assertStringContainsString('never used', $reminder->json('guidance'));
     }
 
     public function test_store_dashboard_endpoint_for_storekeeper(): void

@@ -172,12 +172,13 @@
             <legend class="px-1 text-sm font-semibold">Dates / Amatariki</legend>
             <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <label class="block text-sm">{{ $label('needed_from')['en'] }} / {{ $label('needed_from')['kn'] }} *
-                    <input name="needed_from" id="needed_from" type="date" required class="mt-1 w-full rounded-lg border p-2">
+                    <input name="needed_from" id="needed_from" type="datetime-local" required step="60" class="mt-1 w-full rounded-lg border p-2">
                 </label>
                 <label class="block text-sm">{{ $label('return_by')['en'] }} / {{ $label('return_by')['kn'] }} *
-                    <input name="return_by" id="return_by" type="date" required class="mt-1 w-full rounded-lg border p-2">
+                    <input name="return_by" id="return_by" type="datetime-local" required step="60" class="mt-1 w-full rounded-lg border p-2">
                 </label>
             </div>
+            <p class="mt-2 text-xs text-neutral-500">Times are Africa/Kigali (UTC+2). / Igihe ni Africa/Kigali (UTC+2).</p>
         </fieldset>
 
         <fieldset class="rounded-xl border border-neutral-200 bg-white p-4">

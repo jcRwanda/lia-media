@@ -6,12 +6,12 @@ import { Card, CardContent, CardHeader, CardTitle, EmptyState, PageHeader } from
 import { Button } from '@/components/ui/button';
 import { api, fieldErrors } from '@/lib/api';
 import type { AssetCard } from '@/lib/types';
-import { buildMaterialRequestWhatsappLink, formatDate } from '@/lib/utils';
+import { formatDate } from '@/lib/utils';
 import { formatBytes } from '@/lib/utils';
 import { ProofUploader } from '@/components/ProofUploader';
 import { Input } from '@/components/ui/input';
 import { useState } from 'react';
-import { ClipboardCheck, MessageCircle, PackageCheck, ScanLine } from 'lucide-react';
+import { ClipboardCheck, PackageCheck, ScanLine } from 'lucide-react';
 
 type Dash = {
     review_counts: Record<string, number>; consent_issues: number; uploads_last_7_days: number; open_uploads: number; active_shares: number;
@@ -198,7 +198,6 @@ function StoreDashboard() {
                     <CardContent className="space-y-3">
                         {(data?.today || []).length === 0 ? <p className="text-sm text-neutral-500">Nothing scheduled for today.</p> : null}
                         {(data?.today || []).map((booking) => {
-                            const whatsapp = buildMaterialRequestWhatsappLink(booking as any);
                             const canHandOut = booking.status === 'approved';
                             const canCheckIn = booking.status === 'issued' || booking.status === 'returned';
                             return (
@@ -212,9 +211,6 @@ function StoreDashboard() {
                                             <div className="mt-1 text-xs text-neutral-500">{booking.phone} {booking.needed_from ? `· Needed ${formatDate(booking.needed_from)}` : ''} {booking.return_by ? `· Return ${formatDate(booking.return_by)}` : ''}</div>
                                         </div>
                                         <div className="flex flex-wrap gap-1">
-                                            {whatsapp ? <Button asChild size="sm" variant="secondary">
-                                                <a href={whatsapp} target="_blank" rel="noreferrer"><MessageCircle className="mr-1 h-3.5 w-3.5" />WhatsApp</a>
-                                            </Button> : null}
                                             {canHandOut ? <Button size="sm" onClick={() => openAction(booking, 'issue')}><PackageCheck className="mr-1 h-3.5 w-3.5" />Hand out</Button> : null}
                                             {canCheckIn ? <Button size="sm" variant="secondary" onClick={() => openAction(booking, 'return')}><ClipboardCheck className="mr-1 h-3.5 w-3.5" />Check in</Button> : null}
                                         </div>
@@ -235,7 +231,6 @@ function StoreDashboard() {
                     <CardContent className="space-y-3">
                         {(data?.overdue || []).length === 0 ? <p className="text-sm text-neutral-500">No overdue items.</p> : null}
                         {(data?.overdue || []).map((booking) => {
-                            const whatsapp = buildMaterialRequestWhatsappLink(booking as any);
                             return (
                                 <div key={booking.id} className="rounded-lg border border-red-200 bg-red-50/30 p-3">
                                     <div className="flex flex-wrap items-start justify-between gap-2">
@@ -246,9 +241,9 @@ function StoreDashboard() {
                                             </div>
                                             <div className="mt-1 text-xs text-neutral-600">{booking.phone} · Return by {booking.return_by ? formatDate(booking.return_by) : '-'}</div>
                                         </div>
-                                        {whatsapp ? <Button asChild size="sm" variant="secondary">
-                                            <a href={whatsapp} target="_blank" rel="noreferrer"><MessageCircle className="mr-1 h-3.5 w-3.5" />WhatsApp reminder</a>
-                                        </Button> : null}
+                                        <Button asChild size="sm" variant="secondary">
+                                            <Link to={`/material-requests/${booking.id}`}>Open booking</Link>
+                                        </Button>
                                     </div>
                                 </div>
                             );

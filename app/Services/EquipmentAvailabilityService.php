@@ -6,6 +6,7 @@ use App\Models\EquipmentBlock;
 use App\Models\EquipmentItem;
 use App\Models\MaterialRequest;
 use App\Models\MaterialRequestItem;
+use App\Support\BookingSchedule;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
 use Illuminate\Support\Collection;
@@ -23,7 +24,7 @@ class EquipmentAvailabilityService
     /** @var list<string> */
     public const PENDING_OVERLAP_STATUSES = ['submitted', 'changes_requested'];
 
-    public function __construct(private SettingsService $settings) {}
+    public function __construct(private SettingsService $settings, private BookingSchedule $schedule) {}
 
     public function bookingDay(mixed $value): CarbonImmutable
     {
@@ -195,6 +196,8 @@ class EquipmentAvailabilityService
         ?int $excludeRequestId = null,
         bool $enforceWindowRules = true,
         bool $lockItems = false,
+        ?CarbonImmutable $windowStart = null,
+        ?CarbonImmutable $windowEnd = null,
     ): void {
         $lines = $this->normaliseLines($lines);
         if ($lines === []) {
@@ -246,7 +249,7 @@ class EquipmentAvailabilityService
             }
         }
 
-        $reserved = $this->reservedByItemAndDate($itemIds, $from, $to, $excludeRequestId);
+        $reserved = $this->reservedByItemAndDate($itemIds, $from, $to, $excludeRequestId, $windowStart, $windowEnd);
         $dates = $this->dates($from, $to);
         $linePositions = array_flip($itemIds);
 
@@ -316,8 +319,8 @@ class EquipmentAvailabilityService
         ?int $excludeRequestId = null,
         bool $lock = false,
     ): array {
-        $from = $this->bookingDay($from);
-        $to = $this->bookingDay($to);
+        $windowStart = $from->utc();
+        $windowEnd = $to->utc();
         $indexByItem = [];
         $itemIds = [];
         foreach (array_values($lines) as $index => $line) {
@@ -335,7 +338,7 @@ class EquipmentAvailabilityService
         }
 
         $names = EquipmentItem::query()->whereIn('id', $itemIds)->pluck('name', 'id');
-        $existing = $this->overlappingRequests($itemIds, $from, $to, $excludeRequestId, $lock);
+        $existing = $this->overlappingRequests($itemIds, $windowStart, $windowEnd, $excludeRequestId, $lock);
         $warnings = [];
 
         foreach ($itemIds as $itemId) {
@@ -418,28 +421,44 @@ class EquipmentAvailabilityService
      * @param  list<int>  $itemIds
      * @return array<int, array<int, true>>
      */
-    private function overlappingRequests(array $itemIds, CarbonImmutable $from, CarbonImmutable $to, ?int $excludeRequestId, bool $lock): array
+    private function overlappingRequests(array $itemIds, CarbonImmutable $start, CarbonImmutable $end, ?int $excludeRequestId, bool $lock): array
     {
-        $rows = $this->overlapRows($itemIds, $from, $to, $excludeRequestId);
+        $rows = $this->overlapRows($itemIds, $start, $end, $excludeRequestId);
         $requestIds = $rows->pluck('request_id')->map(fn ($id) => (int) $id)->unique()->sort()->values()->all();
         if ($lock && $requestIds !== []) {
             MaterialRequest::query()->whereIn('id', $requestIds)->orderBy('id')->lockForUpdate()->get(['id']);
-            $rows = $this->overlapRows($itemIds, $from, $to, $excludeRequestId);
+            $rows = $this->overlapRows($itemIds, $start, $end, $excludeRequestId);
         }
 
-        $fromDay = $from->toDateString();
-        $toDay = $to->toDateString();
         $existing = [];
         foreach ($rows as $row) {
-            $start = $this->dateString($row->needed_from);
-            $end = $this->dateString($row->return_by);
-            if (! $this->rangesOverlap($start, $end, $fromDay, $toDay)) {
+            [$rowStart, $rowEnd] = $this->rowInterval($row);
+            if (! $this->schedule->overlaps($start, $end, $rowStart, $rowEnd)) {
                 continue;
             }
             $existing[(int) $row->equipment_item_id][(int) $row->request_id] = true;
         }
 
         return $existing;
+    }
+
+    /**
+     * @return array{0: CarbonImmutable, 1: CarbonImmutable}
+     */
+    private function rowInterval(object $row): array
+    {
+        return $this->schedule->range(
+            [
+                'date' => $this->dateString($row->needed_from),
+                'at' => $row->needed_from_at ? CarbonImmutable::parse($row->needed_from_at)->utc() : null,
+                'time_specified' => $row->needed_from_at !== null,
+            ],
+            [
+                'date' => $this->dateString($row->return_by),
+                'at' => $row->return_by_at ? CarbonImmutable::parse($row->return_by_at)->utc() : null,
+                'time_specified' => $row->return_by_at !== null,
+            ],
+        );
     }
 
     /**
@@ -456,15 +475,17 @@ class EquipmentAvailabilityService
             ->whereIn('material_request_items.equipment_item_id', $itemIds)
             ->whereIn('material_requests.status', self::ACTIVE_OVERLAP_STATUSES)
             ->whereNull('material_requests.deleted_at')
-            ->whereDate('material_requests.needed_from', '<=', $to->toDateString())
-            ->whereDate('material_requests.return_by', '>=', $from->toDateString())
+            ->whereDate('material_requests.needed_from', '<=', $to->copy()->timezone(BookingSchedule::TIMEZONE)->addDay()->toDateString())
+            ->whereDate('material_requests.return_by', '>=', $from->copy()->timezone(BookingSchedule::TIMEZONE)->subDay()->toDateString())
             ->when($excludeRequestId, fn ($query) => $query->where('material_requests.id', '!=', $excludeRequestId))
             ->get([
                 'material_requests.id as request_id',
                 'material_requests.status as request_status',
                 'material_request_items.equipment_item_id',
                 'material_requests.needed_from',
+                'material_requests.needed_from_at',
                 'material_requests.return_by',
+                'material_requests.return_by_at',
             ]);
     }
 
@@ -528,7 +549,7 @@ class EquipmentAvailabilityService
      * @param  list<int>  $itemIds
      * @return array<int, array<string, int>>
      */
-    private function reservedByItemAndDate(array $itemIds, CarbonImmutable $from, CarbonImmutable $to, ?int $excludeRequestId = null): array
+    private function reservedByItemAndDate(array $itemIds, CarbonImmutable $from, CarbonImmutable $to, ?int $excludeRequestId = null, ?CarbonImmutable $windowStart = null, ?CarbonImmutable $windowEnd = null): array
     {
         if ($itemIds === []) {
             return [];
@@ -539,8 +560,8 @@ class EquipmentAvailabilityService
             ->whereIn('material_request_items.equipment_item_id', $itemIds)
             ->whereIn('material_requests.status', ['approved', 'issued'])
             ->whereNull('material_requests.deleted_at')
-            ->whereDate('material_requests.needed_from', '<=', $to->toDateString())
-            ->whereDate('material_requests.return_by', '>=', $from->toDateString())
+            ->whereDate('material_requests.needed_from', '<=', $to->copy()->timezone(BookingSchedule::TIMEZONE)->addDay()->toDateString())
+            ->whereDate('material_requests.return_by', '>=', $from->copy()->timezone(BookingSchedule::TIMEZONE)->subDay()->toDateString())
             ->when($excludeRequestId, fn ($query) => $query->where('material_requests.id', '!=', $excludeRequestId))
             ->get([
                 'material_request_items.equipment_item_id',
@@ -548,15 +569,24 @@ class EquipmentAvailabilityService
                 'material_request_items.qty_approved',
                 'material_request_items.qty_issued',
                 'material_requests.needed_from',
+                'material_requests.needed_from_at',
                 'material_requests.return_by',
+                'material_requests.return_by_at',
             ]);
 
         $reserved = [];
+        $windowStart ??= $this->schedule->dayStart($from->toDateString());
+        $windowEnd ??= $this->schedule->dayStart($to->toDateString())->addDay();
+
         foreach ($rows as $row) {
             $qty = $row->qty_issued !== null
                 ? (int) $row->qty_issued
                 : (int) ($row->qty_approved ?? $row->qty_requested);
             if ($qty <= 0) {
+                continue;
+            }
+            [$rowStart, $rowEnd] = $this->rowInterval($row);
+            if (! $this->schedule->overlaps($windowStart, $windowEnd, $rowStart, $rowEnd)) {
                 continue;
             }
 

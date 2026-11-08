@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router';
 import { api } from '@/lib/api';
-import { buildMaterialRequestWhatsappLink, formatDate } from '@/lib/utils';
+import { formatDate } from '@/lib/utils';
 import { ProofUploader } from '@/components/ProofUploader';
 import { useState } from 'react';
 import { MessageCircle } from 'lucide-react';
@@ -94,6 +94,8 @@ export default function MaterialRequestDetailPage() {
     });
 
     const [decisionError, setDecisionError] = useState('');
+    const [reminder, setReminder] = useState<any>(null);
+    const [reminderError, setReminderError] = useState('');
     const decide = useMutation({
         mutationFn: async (action: 'reject' | 'request-changes') => {
             if (!note.trim()) throw new Error(action === 'reject' ? 'A reason is required to reject.' : 'Tell the requester what to change.');
@@ -113,16 +115,16 @@ export default function MaterialRequestDetailPage() {
                 <div className="flex flex-wrap items-center gap-2 text-sm">
                     <span className="px-2 py-1 rounded bg-lia-50 text-lia-700">{data.source_label || data.source || 'Direct/Hosted form'}</span>
                     <span className="px-2 py-1 rounded bg-neutral-100 capitalize">{data.status} {data.is_overdue ? '(overdue)' : ''}</span>
-                    {['approved', 'issued', 'returned', 'closed'].includes(data.status) ? (
-                        (() => {
-                            const url = data.whatsapp_url || buildMaterialRequestWhatsappLink(data);
-                            return url ? (
-                                <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded bg-emerald-600 px-3 py-1 text-white">
-                                    <MessageCircle className="h-4 w-4" /> Send on WhatsApp
-                                </a>
-                            ) : null;
-                        })()
-                    ) : null}
+                    <button type="button" className="inline-flex items-center gap-1 rounded bg-emerald-700 px-3 py-1 text-white" onClick={async () => {
+                        setReminderError('');
+                        try { setReminder(await api<any>(`/material-requests/${id}/storekeeper-reminder?purpose=pickup`)); }
+                        catch (e: any) { setReminder(null); setReminderError(e?.message || 'Could not prepare the reminder'); }
+                    }}><MessageCircle className="h-4 w-4" /> Preview storekeeper hand-out</button>
+                    <button type="button" className="inline-flex items-center gap-1 rounded bg-emerald-800 px-3 py-1 text-white" onClick={async () => {
+                        setReminderError('');
+                        try { setReminder(await api<any>(`/material-requests/${id}/storekeeper-reminder?purpose=return`)); }
+                        catch (e: any) { setReminder(null); setReminderError(e?.message || 'Could not prepare the reminder'); }
+                    }}><MessageCircle className="h-4 w-4" /> Preview return reminder</button>
                 </div>
             </div>
 
@@ -140,8 +142,10 @@ export default function MaterialRequestDetailPage() {
                 </div>
                 <div className="border rounded p-3 space-y-1">
                     <div className="font-medium">Dates</div>
-                    <div>Pick-up: {data.needed_from}</div>
-                    <div>Return: {data.return_by}</div>
+                    <div>Pick-up: {data.schedule?.needed_from?.label || data.needed_from}</div>
+                    <div>Return: {data.schedule?.return_by?.label || data.return_by}</div>
+                    <div className="text-xs text-neutral-500">Submitted {data.schedule?.submitted_at ? new Date(data.schedule.submitted_at).toLocaleString('en-GB', { timeZone: 'Africa/Kigali' }) : data.created_at || '—'}</div>
+                    <div className="text-xs text-neutral-500">Approved {data.approved_at ? new Date(data.approved_at).toLocaleString('en-GB', { timeZone: 'Africa/Kigali' }) : 'not yet'}{data.approved_by ? ` · actor recorded` : ''}</div>
                     {data.booking_overlap?.summary ? (
                         <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-amber-950">
                             <div className="font-medium">{data.booking_overlap.summary.en}</div>

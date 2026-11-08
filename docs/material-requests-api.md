@@ -81,6 +81,12 @@ Up to 3 active requests may cover the same equipment on overlapping dates. The 2
 ```
 
 `level` is `pending`, `not_guaranteed`, or, on the error path only, the validation message. Availability `daily` adds `pending_request_count` and `active_request_count`. `available_qty` still counts approved and issued quantity only.
+
+`needed_from` and `return_by` stay calendar dates (`Y-m-d`) so the current learning portal can keep sending dates. A date with no clock time is stored without inventing a time and is labeled "time not specified". Send `2026-12-03T09:30` (Africa/Kigali, UTC+2) or an ISO instant with an offset when the portal collects a time. The response `schedule.needed_from.at` / `schedule.return_by.at` are null for date-only values and an ISO string with `+02:00` when a time was given. Return must be after pick-up. Overlap uses those instants: a booking that ends at 10:00 does not block one that starts at 10:00. Legacy date-only rows still occupy the whole Kigali day.
+
+### Storekeeper WhatsApp reminders
+
+`GET /api/material-requests/{id}/storekeeper-reminder?purpose=pickup|return|confirm_return` and `GET /api/material-requests/storekeeper-reminders` are for staff who can manage requests. The link is `https://wa.me/{storekeeper}` using Settings → Storekeeper WhatsApp, or else the storekeeper profile phone. The borrower's number is never used. If neither number is set, `setup_required` is true and `whatsapp_url` is null. The preview includes the reference, item names and quantities, the Kigali due label, and a staff booking link. It does not include email, national ID, certificates, or file URLs. Opening the link does not send a message from this server and does not record a hand-out or a return.
 `422` covers validation, booking rules, blocked dates and stock conflicts. Each API validation failure is logged as
 `API validation failed.` with `correlation_id`, HTTP status, route, and the failing field names. Submitted values,
 files, headers, and the request body are not written to that log. Quote `correlation_id` when asking which field failed.

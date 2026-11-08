@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Jobs\SendMaterialRequestWebhook;
 use App\Models\MaterialRequest;
+use App\Support\BookingSchedule;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -74,6 +75,7 @@ class MaterialRequestWebhookService
             'requester_type' => $request->requester_type,
             'needed_from' => $request->needed_from?->format('Y-m-d'),
             'return_by' => $request->return_by?->format('Y-m-d'),
+            'schedule' => app(BookingSchedule::class)->presentRequest($request),
             'updated_at' => $request->updated_at?->toIso8601String(),
             'review_note' => $request->review_note,
             'decision' => app(MaterialRequestDecisionService::class)->decision($request),
@@ -141,6 +143,7 @@ class MaterialRequestWebhookService
             'source_detail' => $request->source_detail,
             'needed_from' => $request->needed_from?->format('Y-m-d'),
             'return_by' => $request->return_by?->format('Y-m-d'),
+            'schedule' => app(BookingSchedule::class)->presentRequest($request),
             'updated_at' => $request->updated_at?->toIso8601String(),
             'items' => $request->items->map(fn ($item) => [
                 'equipment_item_id' => $item->equipment_item_id,

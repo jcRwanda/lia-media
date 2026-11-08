@@ -6,6 +6,7 @@ use App\Models\EquipmentItem;
 use App\Models\MaterialRequest;
 use App\Models\MaterialRequestItem;
 use App\Models\User;
+use App\Support\BookingSchedule;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -18,6 +19,7 @@ class MaterialRequestPickupItemService
         private MaterialRequestAuditService $audit,
         private MaterialRequestWebhookService $webhooks,
         private MaterialRequestService $files,
+        private BookingSchedule $schedule,
     ) {}
 
     public function isUnavailable(EquipmentItem $item): bool
@@ -136,6 +138,7 @@ class MaterialRequestPickupItemService
                 'qty' => (int) ($line->qty_approved ?? $line->qty_requested),
             ])->all();
             $lines[] = ['equipment_item_id' => $item->id, 'qty' => $qty];
+            [$start, $end] = $this->schedule->rangeFor($request);
 
             $this->availability->assertCanBook(
                 $lines,
@@ -144,6 +147,15 @@ class MaterialRequestPickupItemService
                 $request->id,
                 enforceWindowRules: false,
                 lockItems: true,
+                windowStart: $start,
+                windowEnd: $end,
+            );
+            $this->availability->assertBookingOverlap(
+                [['equipment_item_id' => $item->id, 'qty' => $qty]],
+                $start,
+                $end,
+                $request->id,
+                true,
             );
 
             $line = MaterialRequestItem::query()->create([
@@ -251,6 +263,7 @@ class MaterialRequestPickupItemService
                 'equipment_item_id' => $existing->id === $line->id ? $replacement->id : (int) $existing->equipment_item_id,
                 'qty' => (int) ($existing->qty_approved ?? $existing->qty_requested),
             ])->all();
+            [$start, $end] = $this->schedule->rangeFor($request);
             $this->availability->assertCanBook(
                 $lines,
                 $this->from($request),
@@ -258,11 +271,13 @@ class MaterialRequestPickupItemService
                 $request->id,
                 enforceWindowRules: false,
                 lockItems: true,
+                windowStart: $start,
+                windowEnd: $end,
             );
             $this->availability->assertBookingOverlap(
                 [['equipment_item_id' => $replacement->id, 'qty' => (int) ($line->qty_approved ?? $line->qty_requested)]],
-                $this->from($request),
-                $this->to($request),
+                $start,
+                $end,
                 $request->id,
                 true,
             );

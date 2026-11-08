@@ -2,13 +2,13 @@ import { compressImages } from '@/lib/images';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { api, fieldErrors } from '@/lib/api';
-import { buildMaterialRequestWhatsappLink, formatDate } from '@/lib/utils';
+import { formatDate } from '@/lib/utils';
 import { ProofUploader } from '@/components/ProofUploader';
 import { Badge, Card, CardContent, CardHeader, CardTitle, EmptyState, PageHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
 import { useState } from 'react';
-import { ClipboardCheck, MessageCircle, PackageCheck, ScanLine, X } from 'lucide-react';
+import { ClipboardCheck, PackageCheck, ScanLine, X } from 'lucide-react';
 import { AddAtPickupPanel } from '@/components/AddAtPickupPanel';
 
 type Tab = 'to_hand_out' | 'out_now' | 'due_overdue' | 'history';
@@ -192,7 +192,6 @@ export default function StorekeeperPortalPage() {
 
             <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
                 {(data?.bookings || []).map((booking) => {
-                    const whatsapp = buildMaterialRequestWhatsappLink(booking);
                     const hasUnissued = booking.items.some((item) => !(item.qty_issued != null && item.qty_issued > 0) && item.status !== 'issued');
                     const canHandOut = booking.status === 'approved' || (booking.status === 'issued' && hasUnissued);
                     const canCheckIn = booking.status === 'issued' || booking.status === 'returned';
@@ -277,13 +276,6 @@ export default function StorekeeperPortalPage() {
                                     {canCheckIn ? (
                                         <Button size="sm" variant="secondary" onClick={() => openAction(booking, 'return')}>
                                             <ClipboardCheck className="h-4 w-4" /> Check in
-                                        </Button>
-                                    ) : null}
-                                    {whatsapp ? (
-                                        <Button asChild size="sm" variant="secondary">
-                                            <a href={whatsapp} target="_blank" rel="noreferrer">
-                                                <MessageCircle className="h-4 w-4" /> Send on WhatsApp
-                                            </a>
                                         </Button>
                                     ) : null}
                                     <Link to={`/material-requests/${booking.id}`} className="ml-auto text-xs text-lia-700 underline">

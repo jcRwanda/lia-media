@@ -22,6 +22,7 @@ use App\Services\MaterialRequestWebhookService;
 use App\Storage\ObjectStorage;
 use App\Storage\R2ObjectStorage;
 use App\Support\ApiValidationFailure;
+use App\Support\BookingSchedule;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -43,6 +44,7 @@ class MaterialRequestPublicController extends Controller
         private MaterialRequestDecisionService $decisions,
         private AlumniCertificateExemptVerifier $certificateExempt,
         private ApiValidationFailure $validationFailures,
+        private BookingSchedule $schedule,
     ) {}
 
     /**
@@ -239,8 +241,14 @@ class MaterialRequestPublicController extends Controller
             'equipment_item_id' => (int) $item['equipment_item_id'],
             'qty' => (int) $item['qty'],
         ], $validated['items']);
-        $neededFrom = $this->availability->bookingDay($validated['needed_from']);
-        $returnBy = $this->availability->bookingDay($validated['return_by']);
+        $parsedStart = $this->schedule->parseInput((string) $validated['needed_from']);
+        $parsedEnd = $this->schedule->parseInput((string) $validated['return_by']);
+        if (! $this->schedule->endsAfter($parsedStart, $parsedEnd)) {
+            throw ValidationException::withMessages(['return_by' => ['The return must be after the pick-up. / Gusubiza bigomba kuba nyuma yo gufata.']]);
+        }
+        [$windowStart, $windowEnd] = $this->schedule->range($parsedStart, $parsedEnd);
+        $neededFrom = $this->availability->bookingDay($parsedStart['date']);
+        $returnBy = $this->availability->bookingDay($parsedEnd['date']);
 
         if ($requesterType === 'trainee') {
             $itemIds = array_column($bookingLines, 'equipment_item_id');
@@ -290,8 +298,8 @@ class MaterialRequestPublicController extends Controller
             $validated['purpose_project_description'] = $validated['purpose_project_description'] ?? null;
         }
 
-        $this->availability->assertCanBook($bookingLines, $neededFrom, $returnBy);
-        $this->availability->assertBookingOverlap($bookingLines, $neededFrom, $returnBy);
+        $this->availability->assertCanBook($bookingLines, $neededFrom, $returnBy, null, true, false, $windowStart, $windowEnd);
+        $this->availability->assertBookingOverlap($bookingLines, $windowStart, $windowEnd);
 
         $reusedRequest = null;
         if ($requesterType !== 'trainee') {
@@ -334,9 +342,9 @@ class MaterialRequestPublicController extends Controller
         $source = $apiClient?->name ?? 'Direct/Hosted form';
 
         $bookingOverlap = null;
-        $materialRequest = DB::transaction(function () use ($validated, $bookingLines, $neededFrom, $returnBy, $idDocument, $signature, $cohort, $apiClient, $source, $certificate, &$bookingOverlap) {
-            $this->availability->assertCanBook($bookingLines, $neededFrom, $returnBy, lockItems: true);
-            $bookingOverlap = $this->availability->assertBookingOverlap($bookingLines, $neededFrom, $returnBy, null, true);
+        $materialRequest = DB::transaction(function () use ($validated, $bookingLines, $neededFrom, $returnBy, $idDocument, $signature, $cohort, $apiClient, $source, $certificate, $parsedStart, $parsedEnd, $windowStart, $windowEnd, &$bookingOverlap) {
+            $this->availability->assertCanBook($bookingLines, $neededFrom, $returnBy, null, true, true, $windowStart, $windowEnd);
+            $bookingOverlap = $this->availability->assertBookingOverlap($bookingLines, $windowStart, $windowEnd, null, true);
 
             $materialRequest = MaterialRequest::query()->create([
                 'api_client_id' => $apiClient?->id,
@@ -365,8 +373,10 @@ class MaterialRequestPublicController extends Controller
                 'project_location' => $validated['project_location'] ?? null,
                 'shoot_location' => $validated['shoot_location'] ?? null,
                 'shoot_type' => $validated['shoot_type'] ?? null,
-                'needed_from' => $validated['needed_from'],
-                'return_by' => $validated['return_by'],
+                'needed_from' => $parsedStart['date'],
+                'needed_from_at' => $parsedStart['at'],
+                'return_by' => $parsedEnd['date'],
+                'return_by_at' => $parsedEnd['at'],
                 'terms_accepted' => ! empty($validated['terms_accepted']) || ! empty($validated['terms_credit']),
                 'terms_credit' => ! empty($validated['terms_credit']) || ! empty($validated['terms_accepted']),
                 'consent_declaration' => true,
@@ -437,6 +447,7 @@ class MaterialRequestPublicController extends Controller
         if (is_array($bookingOverlap)) {
             $body['booking_overlap'] = $bookingOverlap;
         }
+        $body['schedule'] = $this->schedule->presentRequest($materialRequest);
 
         return response()->json($body, 201);
     }
@@ -486,17 +497,25 @@ class MaterialRequestPublicController extends Controller
             }
         }
         $bookingLines = collect($lines)->map(fn ($q, $id) => ['equipment_item_id' => $id, 'qty' => $q])->values()->all();
-        $from = $this->availability->bookingDay($validated['needed_from']);
-        $to = $this->availability->bookingDay($validated['return_by']);
-        $this->availability->assertCanBook($bookingLines, $from, $to, $mr->id);
-        $this->availability->assertBookingOverlap($bookingLines, $from, $to, $mr->id);
+        $parsedStart = $this->schedule->parseInput((string) $validated['needed_from']);
+        $parsedEnd = $this->schedule->parseInput((string) $validated['return_by']);
+        if (! $this->schedule->endsAfter($parsedStart, $parsedEnd)) {
+            throw ValidationException::withMessages(['return_by' => ['The return must be after the pick-up. / Gusubiza bigomba kuba nyuma yo gufata.']]);
+        }
+        [$windowStart, $windowEnd] = $this->schedule->range($parsedStart, $parsedEnd);
+        $from = $this->availability->bookingDay($parsedStart['date']);
+        $to = $this->availability->bookingDay($parsedEnd['date']);
+        $this->availability->assertCanBook($bookingLines, $from, $to, $mr->id, true, false, $windowStart, $windowEnd);
+        $this->availability->assertBookingOverlap($bookingLines, $windowStart, $windowEnd, $mr->id);
 
-        DB::transaction(function () use ($mr, $validated, $bookingLines, $from, $to) {
-            $this->availability->assertCanBook($bookingLines, $from, $to, $mr->id, lockItems: true);
-            $this->availability->assertBookingOverlap($bookingLines, $from, $to, $mr->id, true);
+        DB::transaction(function () use ($mr, $validated, $bookingLines, $from, $to, $parsedStart, $parsedEnd, $windowStart, $windowEnd) {
+            $this->availability->assertCanBook($bookingLines, $from, $to, $mr->id, false, true, $windowStart, $windowEnd);
+            $this->availability->assertBookingOverlap($bookingLines, $windowStart, $windowEnd, $mr->id, true);
             $mr->update(array_filter([
-                'needed_from' => $validated['needed_from'],
-                'return_by' => $validated['return_by'],
+                'needed_from' => $parsedStart['date'],
+                'needed_from_at' => $parsedStart['at'],
+                'return_by' => $parsedEnd['date'],
+                'return_by_at' => $parsedEnd['at'],
                 'purpose_project_description' => $validated['purpose_project_description'] ?? null,
             ], fn ($v) => $v !== null) + ['status' => 'submitted']);
             $mr->items()->delete();
@@ -538,6 +557,7 @@ class MaterialRequestPublicController extends Controller
             'full_name' => $mr->full_name,
             'needed_from' => $mr->needed_from?->format('Y-m-d'),
             'return_by' => $mr->return_by?->format('Y-m-d'),
+            'schedule' => $this->schedule->presentRequest($mr),
             'purpose_project_description' => $mr->purpose_project_description,
             'review_note' => $mr->review_note,
             'decision' => $this->decisions->decision($mr),
@@ -571,12 +591,9 @@ class MaterialRequestPublicController extends Controller
             'qty' => (int) ($item->qty_approved ?? $item->qty_requested ?: 1),
         ])->all();
 
-        return $this->availability->bookingOverlap(
-            $lines,
-            $this->availability->bookingDay($mr->needed_from),
-            $this->availability->bookingDay($mr->return_by),
-            $mr->id,
-        );
+        [$start, $end] = $this->schedule->rangeFor($mr);
+
+        return $this->availability->bookingOverlap($lines, $start, $end, $mr->id);
     }
 
     /**

@@ -558,6 +558,15 @@ Do not replay a proof against production and do not submit a real alumni booking
 ## Validation diagnostics
 API validation failures, including material-request submit, now return `correlation_id` and write one warning: `API validation failed.` The context is `correlation_id`, `status`, `fields`, `method`, and `route`. It does not include submitted values, files, headers, or the request body. To see why a portal submit returned 422, match the response `correlation_id` in the log and read `fields` (for example `certificate` or `items.0.qty`). The 14:08 failure from the previous deploy was not logged and cannot be reconstructed.
 
+## Schedule times and storekeeper reminders
+Nullable `needed_from_at` and `return_by_at` are added. Existing date-only rows are not rewritten and display as "time not specified". The learning portal may keep sending `Y-m-d`. Admins preview a WhatsApp message to the configured storekeeper number and open it themselves; the server does not send WhatsApp and does not mark a return because the link was opened.
+
+```bash
+php artisan migrate --force
+```
+
+Apply this only after the deployed QR/logging baseline `a101acb`. Do not reset that server to GitHub `5445e14`.
+
 ## Deploy onto production `321aec0`
 Production history is `5445e14` → `919c520` → `30ab803` → `6775322` → `321aec0`. Do not reset it. From a clean checkout of `321aec0`, apply these two patches in order:
 
