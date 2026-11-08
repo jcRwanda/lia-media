@@ -192,7 +192,8 @@ class EquipmentQrTest extends TestCase
 
         $this->postJson("/api/v1/qr/{$scanned->qr_token}/confirm", ['contact' => 'borrower@example.com'])
             ->assertStatus(422)
-            ->assertJsonPath('reason', 'replacement_required');
+            ->assertJsonPath('reason', 'replacement_required')
+            ->assertJsonPath('errors.contact.0', 'Contact the storekeeper. They must replace the booked unit explicitly.');
 
         $this->assertSame($standIn->id, $line->fresh()->equipment_item_id);
         $this->assertSame(0, EquipmentCheck::query()->count());

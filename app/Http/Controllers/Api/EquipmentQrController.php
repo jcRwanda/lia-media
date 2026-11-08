@@ -213,8 +213,8 @@ class EquipmentQrController extends Controller
             });
             if ($needsStorekeeper) {
                 return [
-                    'message' => "Booking {$active->reference_code} lists a unit that is no longer available. A storekeeper must replace that line with {$item->name} before pickup can be confirmed. Scanning does not substitute it.",
-                    'errors' => ['contact' => ['A storekeeper must replace the booked unit explicitly.']],
+                    'message' => "Contact the storekeeper. Booking {$active->reference_code} lists a unit that is no longer available. They must replace that line with {$item->name} before pickup can be confirmed. Scanning does not substitute another unit.",
+                    'errors' => ['contact' => ['Contact the storekeeper. They must replace the booked unit explicitly.']],
                     'reason' => 'replacement_required',
                     'reference_code' => $active->reference_code,
                 ];
