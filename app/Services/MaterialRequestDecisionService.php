@@ -10,6 +10,15 @@ use App\Support\Roles;
 
 class MaterialRequestDecisionService
 {
+    /**
+     * Borrower may open their own WhatsApp chat to the storekeeper only while the
+     * request is admin-approved, including after it is issued for pickup.
+     * submitted, changes_requested, rejected, returned, and closed do not expose the number.
+     *
+     * @var list<string>
+     */
+    public const BORROWER_STOREKEEPER_CONTACT_STATUSES = ['approved', 'issued'];
+
     public function __construct(private SettingsService $settings) {}
 
     public function record(MaterialRequest $request, ?string $from, string $to, ?string $note, ?User $actor = null, string $actorType = 'user'): MaterialRequestStatusHistory
@@ -102,8 +111,7 @@ class MaterialRequestDecisionService
     public function decision(MaterialRequest $request): array
     {
         $last = $request->statusHistories()->latest('id')->first();
-        $approved = in_array($request->status, ['approved', 'issued'], true);
-        $contact = $approved ? $this->storekeeperContact() : null;
+        $contact = $this->borrowerStorekeeperContact($request);
 
         return [
             'status' => $request->status,
@@ -113,11 +121,36 @@ class MaterialRequestDecisionService
             'decided_at' => $last?->created_at?->toIso8601String(),
             'can_resubmit' => $request->status === 'changes_requested',
             'status_url' => $this->statusUrl($request),
-            'storekeeper' => $contact ? [
-                'name' => $contact['name'],
-                'phone' => $contact['phone'],
-                'whatsapp_url' => $this->whatsappUrl($request, $contact),
-            ] : null,
+            'storekeeper' => $contact,
+        ];
+    }
+
+    /**
+     * Public contact block. Null hides the number and the wa.me link.
+     * The link only opens the borrower's own WhatsApp composer; this app does not send it.
+     *
+     * @return array{name: string, phone: string, whatsapp_url: string}|null
+     */
+    public function borrowerStorekeeperContact(MaterialRequest $request): ?array
+    {
+        if (! in_array($request->status, self::BORROWER_STOREKEEPER_CONTACT_STATUSES, true)) {
+            return null;
+        }
+
+        $contact = $this->storekeeperContact();
+        if (! $contact || empty($contact['whatsapp'])) {
+            return null;
+        }
+
+        $url = $this->whatsappUrl($request, $contact);
+        if ($url === null) {
+            return null;
+        }
+
+        return [
+            'name' => $contact['name'],
+            'phone' => $contact['whatsapp'],
+            'whatsapp_url' => $url,
         ];
     }
 }
