@@ -22,14 +22,12 @@ Your material/equipment request **{{ $request->reference_code }}** status has be
 **{{ $request->status === 'rejected' ? 'Reason' : 'Note' }}:** {{ $request->review_note }}
 @endif
 
-@if(!empty($decision['storekeeper']))
+@if(in_array($request->status, ['approved', 'issued'], true) && !empty($decision['storekeeper']['whatsapp_url']))
 **Pick-up contact:** {{ $decision['storekeeper']['name'] }} ({{ $decision['storekeeper']['phone'] }})
 
-@if($decision['storekeeper']['whatsapp_url'])
 <x-mail::button :url="$decision['storekeeper']['whatsapp_url']" color="success">
 Message the storekeeper on WhatsApp
 </x-mail::button>
-@endif
 @endif
 
 @if($decision['status_url'])

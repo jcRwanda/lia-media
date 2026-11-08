@@ -3,14 +3,16 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\EquipmentItem;
 use App\Services\MaterialRequestFormSchemaService;
+use App\Services\MaterialRequestService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 class MaterialRequestPlatformController extends Controller
 {
-    public function __construct(private MaterialRequestFormSchemaService $schemas, private \App\Services\MaterialRequestService $files) {}
+    public function __construct(private MaterialRequestFormSchemaService $schemas, private MaterialRequestService $files) {}
 
     public function schema(Request $request): JsonResponse
     {
@@ -24,7 +26,7 @@ class MaterialRequestPlatformController extends Controller
 
         // Catalog with every image URL and linked accessories, so portals can show reminders + galleries.
         $trainee = ($data['type'] ?? 'client') === 'trainee';
-        $schema['catalog'] = \App\Models\EquipmentItem::query()->orderBy('name')
+        $schema['catalog'] = EquipmentItem::query()->orderBy('name')
             ->when($trainee, fn ($q) => $q->where('allowed_for_trainees', true))
             ->with(['images', 'accessories'])->get()
             ->map(fn ($item) => MaterialRequestPublicController::catalogEntry($item, $this->files, $trainee))
@@ -59,10 +61,31 @@ class MaterialRequestPlatformController extends Controller
                     'liaKey' => ['type' => 'apiKey', 'in' => 'header', 'name' => 'X-LIA-Key'],
                 ],
                 'schemas' => [
+                    'BookingOverlap' => [
+                        'type' => 'object',
+                        'description' => 'Same-equipment overlap queue. level pending or not_guaranteed on success. A fourth active overlap is a 422 and is not returned here.',
+                        'properties' => [
+                            'timezone' => ['type' => 'string', 'example' => 'Africa/Kigali'],
+                            'max_active_requests' => ['type' => 'integer', 'example' => 3],
+                            'date_semantics' => ['type' => 'string', 'example' => 'inclusive_kigali_calendar_dates'],
+                            'level' => ['type' => 'string', 'enum' => ['pending', 'not_guaranteed']],
+                            'summary' => ['type' => 'object', 'properties' => ['en' => ['type' => 'string'], 'kn' => ['type' => 'string']]],
+                            'warnings' => ['type' => 'array', 'items' => ['type' => 'object', 'properties' => [
+                                'equipment_item_id' => ['type' => 'integer'],
+                                'equipment_name' => ['type' => 'string'],
+                                'active_requests_before' => ['type' => 'integer'],
+                                'position' => ['type' => 'integer'],
+                                'level' => ['type' => 'string'],
+                                'guaranteed' => ['type' => 'boolean'],
+                                'message' => ['type' => 'object'],
+                            ]]],
+                        ],
+                    ],
                     'ValidationError' => [
                         'type' => 'object',
                         'properties' => [
                             'message' => ['type' => 'string', 'example' => 'Validation failed'],
+                            'correlation_id' => ['type' => 'string', 'format' => 'uuid', 'description' => 'Matches the server validation log. The log stores this id, the status, and field names only.'],
                             'errors' => [
                                 'type' => 'object',
                                 'additionalProperties' => [
@@ -201,7 +224,7 @@ class MaterialRequestPlatformController extends Controller
                     'post' => [
                         'tags' => ['Requests'],
                         'summary' => 'Submit a material/equipment request',
-                        'description' => 'Send JSON, or multipart/form-data when uploading id_document and/or signature files. Profile fields may be supplied directly by the trusted platform; signed prefill remains available to the hosted form.',
+                        'description' => 'Send JSON, or multipart/form-data when uploading id_document and/or signature files. Profile fields may be supplied directly by the trusted platform; signed prefill remains available to the hosted form. Opted-in clients may omit an alumni certificate when alumni_certificate_exempt_user, alumni_certificate_exempt_email, alumni_certificate_exempt_at and alumni_certificate_exempt_sig are a valid grandfather proof. See docs/material-requests-api.md.',
                         'security' => [['liaKey' => []]],
                         'requestBody' => [
                             'required' => true,
@@ -219,6 +242,8 @@ class MaterialRequestPlatformController extends Controller
                                         'message' => ['type' => 'string'],
                                         'reference_code' => ['type' => 'string'],
                                         'status' => ['type' => 'string'],
+                                        'alumni_certificate_reminder' => ['type' => 'string', 'description' => 'Present only when a grandfather proof was accepted. It does not block the booking.'],
+                                        'booking_overlap' => ['$ref' => '#/components/schemas/BookingOverlap'],
                                     ],
                                 ]]],
                             ],

@@ -1,6 +1,12 @@
 /** Same-origin fetch wrapper for Laravel Sanctum SPA auth (session cookie + XSRF-TOKEN). */
 export class ApiError extends Error {
-    constructor(public status: number, message: string, public errors: Record<string, string[]> = {}, public code?: string) {
+    constructor(
+        public status: number,
+        message: string,
+        public errors: Record<string, string[]> = {},
+        public code?: string,
+        public reason?: string,
+    ) {
         super(message);
     }
 }
@@ -52,7 +58,7 @@ export async function api<T = unknown>(path: string, init: RequestInit & { json?
     }
     const data = res.status === 204 ? null : await res.json().catch(() => null);
     if (!res.ok) {
-        const error = new ApiError(res.status, data?.message || res.statusText, data?.errors || {}, data?.code);
+        const error = new ApiError(res.status, data?.message || res.statusText, data?.errors || {}, data?.code, data?.reason);
         if (isPasswordLock(error)) {
             passwordLockListeners.forEach((listener) => listener());
         }

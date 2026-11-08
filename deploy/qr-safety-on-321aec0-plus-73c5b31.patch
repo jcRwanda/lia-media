@@ -1,0 +1,606 @@
+diff --git a/app/Http/Controllers/Api/EquipmentQrController.php b/app/Http/Controllers/Api/EquipmentQrController.php
+index 0d11d0b..b906a1a 100644
+--- a/app/Http/Controllers/Api/EquipmentQrController.php
++++ b/app/Http/Controllers/Api/EquipmentQrController.php
+@@ -6,7 +6,6 @@
+ use App\Models\EquipmentCheck;
+ use App\Models\EquipmentItem;
+ use App\Models\MaterialRequest;
+-use App\Models\MaterialRequestItem;
+ use App\Services\MaterialRequestAuditService;
+ use App\Services\MaterialRequestService;
+ use Illuminate\Database\Eloquent\Collection;
+@@ -85,41 +84,13 @@ public function confirm(Request $request, string $token): JsonResponse
+         $booking = self::currentBookings($item)->first(fn (MaterialRequest $mr) => self::contactMatches($mr, $contact, $isEmail));
+         $line = $booking?->items->firstWhere('equipment_item_id', $item->id);
+ 
+-        // Same borrower, but the QR is for a replacement unit (e.g. soft-deleted "chargers" → physical Canon charge R).
+-        if (! $booking) {
+-            $contactBookings = self::contactBookings($contact, $isEmail);
+-            $active = $contactBookings->filter(fn (MaterialRequest $mr) => in_array($mr->status, ['approved', 'issued'], true));
+-            foreach ($active as $candidate) {
+-                $replacement = self::findReplaceableLine($candidate, $item);
+-                if (! $replacement) {
+-                    continue;
+-                }
+-                $oldId = $replacement->equipment_item_id;
+-                $replacement->update(['equipment_item_id' => $item->id]);
+-                $this->audit->log($candidate, 'equipment.pickup_item_remapped', [
+-                    'from_equipment_item_id' => $oldId,
+-                    'to_equipment_item_id' => $item->id,
+-                    'to_equipment_name' => $item->name,
+-                    'material_request_item_id' => $replacement->id,
+-                ], null, 'requester');
+-                $booking = $candidate->fresh(['items']);
+-                $line = $booking->items->firstWhere('id', $replacement->id);
+-                break;
+-            }
+-        }
+-
+-        if (! $booking) {
++        // The scanned QR must already be the booked unit. A shared word, category, or
++        // soft-deleted stand-in never rewrites the line; a storekeeper replaces it explicitly.
++        if (! $booking || ! $line) {
+             return response()->json(self::confirmFailurePayload($item, $contact, $isEmail), 422);
+         }
+-
+         $existing = EquipmentCheck::query()->where('type', EquipmentCheck::PICKUP_CONFIRM)
+-            ->where(function ($q) use ($line, $item, $booking) {
+-                if ($line) {
+-                    $q->where('material_request_item_id', $line->id);
+-                } else {
+-                    $q->where('material_request_id', $booking->id)->where('equipment_item_id', $item->id);
+-                }
+-            })->first();
++            ->where('material_request_item_id', $line?->id)->first();
+ 
+         if (! $existing) {
+             $existing = EquipmentCheck::query()->create([
+@@ -156,90 +127,40 @@ private static function contactMatches(MaterialRequest $mr, string $contact, boo
+         if ($isEmail) {
+             return $mr->email && strcasecmp(trim((string) $mr->email), $contact) === 0;
+         }
+-        $d = self::digits($contact);
++        $digits = self::digits($contact);
+ 
+-        return strlen($d) >= 7 && $d === self::digits($mr->phone);
++        return strlen($digits) >= 7 && $digits === self::digits($mr->phone);
+     }
+ 
+-    /** Recent bookings for this borrower (any status), newest first. */
++    /** Recent bookings for this borrower (any status), newest first. Does not change them. */
+     private static function contactBookings(string $contact, bool $isEmail): Collection
+     {
+-        $q = MaterialRequest::query()->with(['items.equipmentItem' => fn ($q) => $q->withTrashed()])->orderByDesc('id');
++        $query = MaterialRequest::query()
++            ->with(['items.equipmentItem' => fn ($q) => $q->withTrashed()])
++            ->orderByDesc('id');
+         if ($isEmail) {
+-            $q->whereRaw('LOWER(TRIM(email)) = ?', [strtolower($contact)]);
++            $query->whereRaw('LOWER(TRIM(email)) = ?', [strtolower($contact)]);
+         } else {
+             $digits = self::digits($contact);
+             if (strlen($digits) < 7) {
+                 return new Collection;
+             }
+-            $q->whereNotNull('phone')->where('phone', '!=', '');
+-            // Compare last 9 digits in PHP after fetch of recent candidates.
+-            return $q->whereIn('status', ['submitted', 'changes_requested', 'approved', 'issued', 'returned', 'closed'])
++
++            return $query->whereNotNull('phone')->where('phone', '!=', '')
++                ->whereIn('status', ['submitted', 'changes_requested', 'approved', 'issued', 'returned', 'closed'])
+                 ->limit(30)->get()
+                 ->filter(fn (MaterialRequest $mr) => self::digits($mr->phone) === $digits)
+                 ->values();
+         }
+ 
+-        return $q->whereIn('status', ['submitted', 'changes_requested', 'approved', 'issued', 'returned', 'closed'])
++        return $query->whereIn('status', ['submitted', 'changes_requested', 'approved', 'issued', 'returned', 'closed'])
+             ->limit(20)->get();
+     }
+ 
+     /**
+-     * If the booking listed a soft-deleted / missing stand-in for this gear (e.g. generic "chargers"),
+-     * treat the scanned unit as that line so pickup can proceed.
+-     */
+-    private static function findReplaceableLine(MaterialRequest $booking, EquipmentItem $scanned): ?MaterialRequestItem
+-    {
+-        if ($booking->items->firstWhere('equipment_item_id', $scanned->id)) {
+-            return null;
+-        }
+-
+-        foreach ($booking->items as $line) {
+-            if ($line->qty_issued || $line->status === 'issued' || $line->issued_at) {
+-                continue;
+-            }
+-            $listed = $line->equipmentItem; // may be soft-deleted via withTrashed
+-            if (! $listed) {
+-                continue;
+-            }
+-            $listedGone = method_exists($listed, 'trashed') && $listed->trashed();
+-            if (! $listedGone && ! self::namesLookLikeSameGear($listed->name, $scanned->name) && ! self::sameCategory($listed, $scanned)) {
+-                continue;
+-            }
+-            if ($listedGone || self::namesLookLikeSameGear($listed->name, $scanned->name) || self::sameCategory($listed, $scanned)) {
+-                // Only auto-remap when the listed unit is gone, or names clearly match charger/camera family.
+-                if ($listedGone || self::namesLookLikeSameGear($listed->name, $scanned->name)) {
+-                    return $line;
+-                }
+-            }
+-        }
+-
+-        return null;
+-    }
+-
+-    private static function sameCategory(EquipmentItem $a, EquipmentItem $b): bool
+-    {
+-        $ca = strtolower(trim((string) $a->category));
+-        $cb = strtolower(trim((string) $b->category));
+-
+-        return $ca !== '' && $ca === $cb;
+-    }
+-
+-    private static function namesLookLikeSameGear(string $a, string $b): bool
+-    {
+-        $na = strtolower($a);
+-        $nb = strtolower($b);
+-        foreach (['charg', 'battery', 'lens', 'tripod', 'light', 'mic', 'camera', 'canon', 'sony'] as $token) {
+-            if (str_contains($na, $token) && str_contains($nb, $token)) {
+-                return true;
+-            }
+-        }
+-
+-        return false;
+-    }
+-
+-    /**
+-     * @return array{message: string, errors: array<string, list<string>>, reason?: string}
++     * Explains a failed exact-item confirmation. Never selects a substitute unit.
++     *
++     * @return array{message: string, errors: array<string, list<string>>, reason: string, reference_code?: string, status?: string, booking_items?: list<string>}
+      */
+     private static function confirmFailurePayload(EquipmentItem $item, string $contact, bool $isEmail): array
+     {
+@@ -282,8 +203,25 @@ private static function confirmFailurePayload(EquipmentItem $item, string $conta
+                 ];
+             }
+ 
++            $needsStorekeeper = $active->items->contains(function ($line) {
++                if ($line->qty_issued || $line->status === 'issued' || $line->issued_at) {
++                    return false;
++                }
++                $listed = $line->equipmentItem;
++
++                return ! $listed || (method_exists($listed, 'trashed') && $listed->trashed());
++            });
++            if ($needsStorekeeper) {
++                return [
++                    'message' => "Booking {$active->reference_code} lists a unit that is no longer available. A storekeeper must replace that line with {$item->name} before pickup can be confirmed. Scanning does not substitute it.",
++                    'errors' => ['contact' => ['A storekeeper must replace the booked unit explicitly.']],
++                    'reason' => 'replacement_required',
++                    'reference_code' => $active->reference_code,
++                ];
++            }
++
+             return [
+-                'message' => "Booking {$active->reference_code} is for: {$list}. This QR is {$item->name}, which is not on that list. Ask the storekeeper to add it at pickup.",
++                'message' => "Booking {$active->reference_code} is for: {$list}. This QR is {$item->name}, which is not on that list. Ask the storekeeper to replace the booked unit explicitly.",
+                 'errors' => ['contact' => ["{$item->name} is not on booking {$active->reference_code}."]],
+                 'reason' => 'different_item',
+                 'reference_code' => $active->reference_code,
+diff --git a/app/Http/Controllers/Api/MaterialRequestController.php b/app/Http/Controllers/Api/MaterialRequestController.php
+index 76d08f8..dba0720 100644
+--- a/app/Http/Controllers/Api/MaterialRequestController.php
++++ b/app/Http/Controllers/Api/MaterialRequestController.php
+@@ -14,8 +14,8 @@
+ use App\Services\MaterialRequestAuditService;
+ use App\Services\MaterialRequestDecisionService;
+ use App\Services\MaterialRequestFormSchemaService;
+-use App\Services\MaterialRequestService;
+ use App\Services\MaterialRequestPickupItemService;
++use App\Services\MaterialRequestService;
+ use App\Services\MaterialRequestWebhookService;
+ use App\Support\ImageNormalizer;
+ use Illuminate\Http\JsonResponse;
+@@ -343,7 +343,6 @@ public function requestChanges(Request $request, MaterialRequest $materialReques
+         return response()->json(['request' => $materialRequest->load('items.equipmentItem')]);
+     }
+ 
+-
+     public function pickupCatalog(Request $request, MaterialRequest $materialRequest): JsonResponse
+     {
+         if (! $request->user()?->canDo('material-requests.issue')) {
+@@ -409,6 +408,35 @@ public function addItemAtPickup(Request $request, MaterialRequest $materialReque
+         ], 201);
+     }
+ 
++    public function replacePickupItem(Request $request, MaterialRequest $materialRequest, MaterialRequestItem $item): JsonResponse
++    {
++        if (! $request->user()?->canDo('material-requests.issue')) {
++            abort(403);
++        }
++
++        $validator = Validator::make($request->all(), [
++            'equipment_item_id' => ['required', 'integer', 'exists:equipment_items,id'],
++        ]);
++        if ($validator->fails()) {
++            return response()->json(['message' => 'Validation failed', 'errors' => $validator->errors()], 422);
++        }
++
++        try {
++            $line = $this->pickupItems->replace(
++                $materialRequest,
++                $request->user(),
++                $item,
++                (int) $validator->validated()['equipment_item_id'],
++            );
++        } catch (ValidationException $e) {
++            return response()->json(['message' => 'Validation failed', 'errors' => $e->errors()], 422);
++        }
++
++        return response()->json([
++            'item' => $this->presentPickupLine($line),
++        ]);
++    }
++
+     public function removePickupItem(Request $request, MaterialRequest $materialRequest, MaterialRequestItem $item): JsonResponse
+     {
+         if (! $request->user()?->canDo('material-requests.issue')) {
+diff --git a/app/Services/MaterialRequestPickupItemService.php b/app/Services/MaterialRequestPickupItemService.php
+index 49c2ebc..5c04b87 100644
+--- a/app/Services/MaterialRequestPickupItemService.php
++++ b/app/Services/MaterialRequestPickupItemService.php
+@@ -216,6 +216,66 @@ public function resolveByQr(string $token): EquipmentItem
+         return $item;
+     }
+ 
++    /**
++     * Storekeeper explicitly swaps one unissued line to another catalog unit.
++     * Borrower QR confirmation cannot call this, including when the booked unit was deleted.
++     */
++    public function replace(MaterialRequest $request, User $actor, MaterialRequestItem $line, int $equipmentItemId): MaterialRequestItem
++    {
++        $this->assertOpenForPickup($request);
++        if ($line->material_request_id !== $request->id) {
++            throw ValidationException::withMessages(['item' => ['Item does not belong to this request.']]);
++        }
++        if ($line->qty_issued || $line->status === 'issued' || $line->issued_at) {
++            throw ValidationException::withMessages(['item' => ['This line has already been issued and cannot be replaced.']]);
++        }
++        if ((int) $line->equipment_item_id === $equipmentItemId) {
++            throw ValidationException::withMessages(['equipment_item_id' => ['That is already the unit on this line.']]);
++        }
++
++        return DB::transaction(function () use ($request, $actor, $line, $equipmentItemId) {
++            $replacement = EquipmentItem::query()->lockForUpdate()->find($equipmentItemId);
++            if (! $replacement) {
++                throw ValidationException::withMessages(['equipment_item_id' => ['Equipment item not found.']]);
++            }
++            if ($this->isUnavailable($replacement)) {
++                throw ValidationException::withMessages(['equipment_item_id' => ['This item is unavailable or needs repair.']]);
++            }
++            if ($request->items()->where('equipment_item_id', $replacement->id)->where('id', '!=', $line->id)->lockForUpdate()->exists()) {
++                throw ValidationException::withMessages(['equipment_item_id' => ['This item is already on the request.']]);
++            }
++
++            $fromId = (int) $line->equipment_item_id;
++            $fromName = EquipmentItem::withTrashed()->find($fromId)?->name ?? 'removed unit';
++            $lines = $request->items()->get()->map(fn (MaterialRequestItem $existing) => [
++                'equipment_item_id' => $existing->id === $line->id ? $replacement->id : (int) $existing->equipment_item_id,
++                'qty' => (int) ($existing->qty_approved ?? $existing->qty_requested),
++            ])->all();
++            $this->availability->assertCanBook(
++                $lines,
++                $this->from($request),
++                $this->to($request),
++                $request->id,
++                enforceWindowRules: false,
++                lockItems: true,
++            );
++
++            $line->update(['equipment_item_id' => $replacement->id]);
++            $historyNote = 'Replaced at pickup by '.$actor->name.': '.$fromName.' → '.$replacement->name;
++            $this->decisions->record($request, $request->status, 'pickup_item_replaced', $historyNote, $actor);
++            $this->audit->log($request, 'equipment.pickup_item_replaced', [
++                'material_request_item_id' => $line->id,
++                'from_equipment_item_id' => $fromId,
++                'to_equipment_item_id' => $replacement->id,
++                'from_equipment_name' => $fromName,
++                'to_equipment_name' => $replacement->name,
++            ], $actor);
++            $this->webhooks->dispatchEvent($request->fresh(['apiClient']), 'material_request.pickup_item_replaced');
++
++            return $line->fresh(['equipmentItem.images', 'equipmentItem.accessories', 'addedBy:id,name']);
++        });
++    }
++
+     private function assertOpenForPickup(MaterialRequest $request): void
+     {
+         if (! in_array($request->status, ['approved', 'issued'], true)) {
+diff --git a/routes/api.php b/routes/api.php
+index ca1486d..c095d4e 100644
+--- a/routes/api.php
++++ b/routes/api.php
+@@ -10,6 +10,7 @@
+ use App\Http\Controllers\Api\EquipmentBlockController;
+ use App\Http\Controllers\Api\EquipmentCalendarController;
+ use App\Http\Controllers\Api\EquipmentItemController;
++use App\Http\Controllers\Api\EquipmentLabelController;
+ use App\Http\Controllers\Api\EquipmentQrController;
+ use App\Http\Controllers\Api\LookupController;
+ use App\Http\Controllers\Api\MaterialRequestAvailabilityController;
+@@ -209,6 +210,7 @@
+         Route::middleware('can:material-requests.issue')->group(function () {
+             Route::get('/material-requests/{materialRequest}/pickup-catalog', [MaterialRequestController::class, 'pickupCatalog']);
+             Route::post('/material-requests/{materialRequest}/items', [MaterialRequestController::class, 'addItemAtPickup']);
++            Route::post('/material-requests/{materialRequest}/items/{item}/replace', [MaterialRequestController::class, 'replacePickupItem']);
+             Route::delete('/material-requests/{materialRequest}/items/{item}', [MaterialRequestController::class, 'removePickupItem']);
+             Route::post('/material-requests/{materialRequest}/issue', [MaterialRequestController::class, 'issue']);
+         });
+@@ -229,7 +231,7 @@
+         // Equipment inventory
+         Route::middleware('can:equipment.manage')->group(function () {
+             Route::get('/equipment-items', [EquipmentItemController::class, 'index']);
+-            Route::get('/equipment-labels/pdf', [\App\Http\Controllers\Api\EquipmentLabelController::class, 'pdf']);
++            Route::get('/equipment-labels/pdf', [EquipmentLabelController::class, 'pdf']);
+             Route::post('/equipment-items', [EquipmentItemController::class, 'store']);
+             Route::get('/equipment-items/{equipmentItem}', [EquipmentItemController::class, 'show']);
+             Route::get('/equipment-calendar', [EquipmentCalendarController::class, 'index']);
+diff --git a/tests/Feature/EquipmentQrTest.php b/tests/Feature/EquipmentQrTest.php
+index f77dad6..c4419c1 100644
+--- a/tests/Feature/EquipmentQrTest.php
++++ b/tests/Feature/EquipmentQrTest.php
+@@ -132,7 +132,6 @@ public function test_scan_requires_staff(): void
+         $u = User::factory()->create(['role' => 'multimedia']);
+         $this->actingAs($u)->getJson("/api/equipment-scan/{$item->qr_token}")->assertForbidden();
+     }
+-}
+ 
+     public function test_confirm_explains_different_item_and_not_approved(): void
+     {
+@@ -157,21 +156,70 @@ public function test_confirm_explains_different_item_and_not_approved(): void
+             ->assertJsonPath('reason', 'not_approved');
+     }
+ 
+-    public function test_confirm_remaps_soft_deleted_stand_in_to_scanned_unit(): void
++    public function test_canon_substitution_leaves_the_booking_unchanged(): void
+     {
+-        $standIn = EquipmentItem::factory()->create(['name' => 'Camera battery chargers']);
++        $listed = EquipmentItem::factory()->create(['name' => 'Canon R body', 'serial_number' => 'BODY-1']);
+         $scanned = EquipmentItem::factory()->create(['name' => 'Canon charge R', 'serial_number' => 'KEHB']);
+-        $mr = $this->booking($standIn, ['email' => 'assoumpta255@gmail.com', 'phone' => '+250787739837']);
+-        $standIn->delete();
++        $mr = $this->booking($listed, ['email' => 'borrower@example.com', 'phone' => '0788123456']);
++        $line = $mr->items()->firstOrFail();
+ 
+-        $this->postJson("/api/v1/qr/{$scanned->qr_token}/confirm", ['contact' => 'assoumpta255@gmail.com'])
++        $this->postJson("/api/v1/qr/{$listed->qr_token}/confirm", ['contact' => 'borrower@example.com'])
+             ->assertOk()
+             ->assertJsonPath('booking.reference_code', $mr->reference_code);
+ 
+-        $this->assertSame($scanned->id, $mr->items()->first()->fresh()->equipment_item_id);
++        $this->postJson("/api/v1/qr/{$scanned->qr_token}/confirm", ['contact' => 'borrower@example.com'])
++            ->assertStatus(422)
++            ->assertJsonPath('reason', 'different_item');
++
++        $this->assertSame($listed->id, $line->fresh()->equipment_item_id);
++        $this->assertDatabaseMissing('equipment_checks', [
++            'material_request_id' => $mr->id,
++            'equipment_item_id' => $scanned->id,
++        ]);
++        $this->assertDatabaseMissing('material_request_audits', [
++            'material_request_id' => $mr->id,
++            'action' => 'equipment.pickup_item_remapped',
++        ]);
++    }
++
++    public function test_deleted_unit_is_not_remapped_until_storekeeper_replaces_it(): void
++    {
++        $standIn = EquipmentItem::factory()->create(['name' => 'Camera battery chargers']);
++        $scanned = EquipmentItem::factory()->create(['name' => 'Canon charge R', 'serial_number' => 'KEHB', 'total_qty' => 2, 'condition' => 'good']);
++        $mr = $this->booking($standIn, ['email' => 'borrower@example.com', 'phone' => '0788123456']);
++        $line = $mr->items()->firstOrFail();
++        $standIn->delete();
++
++        $this->postJson("/api/v1/qr/{$scanned->qr_token}/confirm", ['contact' => 'borrower@example.com'])
++            ->assertStatus(422)
++            ->assertJsonPath('reason', 'replacement_required');
++
++        $this->assertSame($standIn->id, $line->fresh()->equipment_item_id);
++        $this->assertSame(0, EquipmentCheck::query()->count());
++
++        $this->postJson("/api/material-requests/{$mr->id}/items/{$line->id}/replace", [
++            'equipment_item_id' => $scanned->id,
++        ])->assertUnauthorized();
++
++        $storekeeper = User::factory()->create(['role' => 'storekeeper', 'name' => 'Sam Store']);
++        $this->actingAs($storekeeper)->postJson("/api/material-requests/{$mr->id}/items/{$line->id}/replace", [
++            'equipment_item_id' => $scanned->id,
++        ])->assertOk()->assertJsonPath('item.equipment_item_id', $scanned->id);
++
++        $this->assertSame($scanned->id, $line->fresh()->equipment_item_id);
++        $this->assertSame(0, EquipmentCheck::query()->where('type', 'pickup_confirm')->count());
++        $this->assertDatabaseHas('material_request_audits', [
++            'material_request_id' => $mr->id,
++            'action' => 'equipment.pickup_item_replaced',
++        ]);
++
++        $this->postJson("/api/v1/qr/{$scanned->qr_token}/confirm", ['contact' => 'borrower@example.com'])
++            ->assertOk()
++            ->assertJsonPath('booking.reference_code', $mr->reference_code);
+         $this->assertDatabaseHas('equipment_checks', [
+             'material_request_id' => $mr->id,
+             'equipment_item_id' => $scanned->id,
+             'type' => 'pickup_confirm',
+         ]);
+     }
++}
+diff --git a/tests/Feature/MaterialRequestPickupAddTest.php b/tests/Feature/MaterialRequestPickupAddTest.php
+index 823fbbf..7b5573f 100644
+--- a/tests/Feature/MaterialRequestPickupAddTest.php
++++ b/tests/Feature/MaterialRequestPickupAddTest.php
+@@ -8,6 +8,7 @@
+ use App\Models\User;
+ use Illuminate\Foundation\Testing\RefreshDatabase;
+ use Illuminate\Http\UploadedFile;
++use Illuminate\Support\Facades\Mail;
+ use Illuminate\Support\Facades\Storage;
+ use Tests\TestCase;
+ 
+@@ -239,4 +240,30 @@ public function test_public_status_includes_added_at_pickup_flag(): void
+             ->assertOk()
+             ->assertJsonFragment(['name' => 'Cable Kit', 'added_at_pickup' => true]);
+     }
++
++    public function test_partially_issued_request_can_still_be_added_to_and_issued(): void
++    {
++        Storage::fake(config('filesystems.default'));
++        Mail::fake();
++        $storekeeper = User::factory()->create(['role' => 'storekeeper']);
++        $booking = $this->booking(['status' => 'issued']);
++        $extra = EquipmentItem::factory()->create(['total_qty' => 2, 'condition' => 'good', 'name' => 'Second Light']);
++
++        $lineId = $this->actingAs($storekeeper)->postJson("/api/material-requests/{$booking->id}/items", [
++            'equipment_item_id' => $extra->id,
++            'qty' => 1,
++        ])->assertCreated()->json('item.id');
++
++        $this->actingAs($storekeeper)->post("/api/material-requests/{$booking->id}/issue", [
++            'items' => [[
++                'id' => $lineId,
++                'qty_issued' => 1,
++                'issue_proofs' => [UploadedFile::fake()->create('c.jpg', 40, 'image/jpeg')],
++            ]],
++        ])->assertOk();
++
++        $this->assertSame('issued', $booking->fresh()->status);
++        $this->assertSame($extra->id, MaterialRequestItem::query()->find($lineId)?->equipment_item_id);
++        $this->assertSame(1, MaterialRequestItem::query()->find($lineId)?->qty_issued);
++    }
+ }
+diff --git a/tests/Feature/PortalAlumniCertificatePayloadTest.php b/tests/Feature/PortalAlumniCertificatePayloadTest.php
+new file mode 100644
+index 0000000..56cb260
+--- /dev/null
++++ b/tests/Feature/PortalAlumniCertificatePayloadTest.php
+@@ -0,0 +1,120 @@
++<?php
++
++namespace Tests\Feature;
++
++use App\Models\ApiClient;
++use App\Models\Cohort;
++use App\Models\EquipmentItem;
++use App\Models\MaterialRequest;
++use Illuminate\Foundation\Testing\RefreshDatabase;
++use Illuminate\Support\Facades\Hash;
++use Illuminate\Support\Facades\Http;
++use Illuminate\Support\Facades\Mail;
++use Tests\TestCase;
++
++/**
++ * The portal signs the trusted account email and must submit that same address
++ * as the booking email. A different address typed on the form does not match.
++ */
++class PortalAlumniCertificatePayloadTest extends TestCase
++{
++    use RefreshDatabase;
++
++    protected function setUp(): void
++    {
++        parent::setUp();
++        config(['material-requests.alumni_certificate_required_for_api' => true]);
++        Mail::fake();
++        Http::fake();
++    }
++
++    public function test_proof_for_the_account_email_is_accepted_when_the_booking_email_matches(): void
++    {
++        $apiKey = 'portal-media-api-key';
++        $accountEmail = 'portal.account@example.com';
++        ApiClient::query()->create([
++            'name' => 'LIA Learning Portal',
++            'key_hash' => Hash::make($apiKey),
++            'prefill_secret' => $apiKey,
++            'active' => true,
++            'allows_alumni_certificate_exempt' => true,
++        ]);
++
++        $this->withHeaders(['X-LIA-Key' => $apiKey])->postJson(
++            '/api/v1/material-requests/submit',
++            $this->portalPayload($apiKey, 17, $accountEmail, $accountEmail),
++        )->assertCreated()
++            ->assertJsonPath('message', 'Request submitted');
++
++        $booking = MaterialRequest::query()->where('email', $accountEmail)->firstOrFail();
++        $this->assertSame('grandfathered', $booking->certificate_source);
++        $this->assertNull($booking->certificate_path);
++    }
++
++    public function test_typed_email_that_differs_from_the_account_email_is_rejected(): void
++    {
++        $apiKey = 'portal-media-api-key';
++        $accountEmail = 'portal.account@example.com';
++        $typedEmail = 'typed.on.form@example.com';
++        ApiClient::query()->create([
++            'name' => 'LIA Learning Portal',
++            'key_hash' => Hash::make($apiKey),
++            'prefill_secret' => $apiKey,
++            'active' => true,
++            'allows_alumni_certificate_exempt' => true,
++        ]);
++
++        $this->withHeaders(['X-LIA-Key' => $apiKey])->postJson(
++            '/api/v1/material-requests/submit',
++            $this->portalPayload($apiKey, 17, $accountEmail, $typedEmail),
++        )->assertStatus(422)->assertJsonValidationErrors('certificate');
++
++        $this->assertSame(0, MaterialRequest::query()->count());
++    }
++
++    /**
++     * @return array<string, mixed>
++     */
++    private function portalPayload(string $apiKey, int $portalUserId, string $accountEmail, string $bookingEmail): array
++    {
++        $item = EquipmentItem::factory()->create(['total_qty' => 3]);
++        $cohort = Cohort::query()->firstOrCreate(['name' => 'Cohort 2'], ['code' => 'C2', 'year' => 2024]);
++        $issuedAt = now()->getTimestamp();
++        $signed = 'alumni-certificate-grandfathered|'.$portalUserId.'|'.$accountEmail.'|'.$issuedAt;
++
++        return [
++            'requester_type' => 'alumni',
++            'full_name' => 'Portal Alumni',
++            'phone' => '0788000111',
++            'email' => $bookingEmail,
++            'project_name' => 'Portal booking',
++            'national_id' => '1199880012345678',
++            'province_res' => 'Kigali',
++            'district_res' => 'Gasabo',
++            'sector_res' => 'Remera',
++            'cell_res' => 'Rukiri',
++            'village_res' => 'Amahoro',
++            'emergency_contact_name' => 'Mum',
++            'emergency_contact_phone' => '0788000222',
++            'relationship' => 'Mother',
++            'purpose_project_description' => 'Shoot',
++            'project_province' => 'Kigali',
++            'project_district' => 'Gasabo',
++            'project_sector' => 'Remera',
++            'project_cell' => 'Rukiri',
++            'project_village' => 'Amahoro',
++            'needed_from' => now()->addDays(3)->toDateString(),
++            'return_by' => now()->addDays(5)->toDateString(),
++            'terms_accepted' => true,
++            'consent_declaration' => true,
++            'cohort_id' => $cohort->id,
++            'signature' => 'data:image/png;base64,'.base64_encode(base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==')),
++            'id_document' => 'data:application/pdf;base64,'.base64_encode('%PDF-1.4 id'),
++            'items' => [['equipment_item_id' => $item->id, 'qty' => 1]],
++            'alumni_certificate_exempt_user' => $portalUserId,
++            'alumni_certificate_exempt_email' => $accountEmail,
++            'alumni_certificate_exempt_at' => $issuedAt,
++            'alumni_certificate_exempt_sig' => hash_hmac('sha256', $signed, $apiKey),
++        ];
++    }
++}

@@ -81,23 +81,14 @@ class EquipmentQrController extends Controller
         $contact = trim($data['contact']);
         $isEmail = str_contains($contact, '@');
 
-        $booking = self::currentBookings($item)->first(function (MaterialRequest $mr) use ($contact, $isEmail) {
-            if ($isEmail) {
-                return $mr->email && strcasecmp(trim($mr->email), $contact) === 0;
-            }
-            $d = self::digits($contact);
+        $booking = self::currentBookings($item)->first(fn (MaterialRequest $mr) => self::contactMatches($mr, $contact, $isEmail));
+        $line = $booking?->items->firstWhere('equipment_item_id', $item->id);
 
-            return strlen($d) >= 7 && $d === self::digits($mr->phone);
-        });
-
-        if (! $booking) {
-            return response()->json([
-                'message' => 'We could not find a confirmed booking for this item with that phone number or email.',
-                'errors' => ['contact' => ['No matching booking found for this item.']],
-            ], 422);
+        // The scanned QR must already be the booked unit. A shared word, category, or
+        // soft-deleted stand-in never rewrites the line; a storekeeper replaces it explicitly.
+        if (! $booking || ! $line) {
+            return response()->json(self::confirmFailurePayload($item, $contact, $isEmail), 422);
         }
-
-        $line = $booking->items->firstWhere('equipment_item_id', $item->id);
         $existing = EquipmentCheck::query()->where('type', EquipmentCheck::PICKUP_CONFIRM)
             ->where('material_request_item_id', $line?->id)->first();
 
@@ -129,6 +120,124 @@ class EquipmentQrController extends Controller
                 'return_by' => $booking->return_by?->toDateString(),
             ],
         ]);
+    }
+
+    private static function contactMatches(MaterialRequest $mr, string $contact, bool $isEmail): bool
+    {
+        if ($isEmail) {
+            return $mr->email && strcasecmp(trim((string) $mr->email), $contact) === 0;
+        }
+        $digits = self::digits($contact);
+
+        return strlen($digits) >= 7 && $digits === self::digits($mr->phone);
+    }
+
+    /** Recent bookings for this borrower (any status), newest first. Does not change them. */
+    private static function contactBookings(string $contact, bool $isEmail): Collection
+    {
+        $query = MaterialRequest::query()
+            ->with(['items.equipmentItem' => fn ($q) => $q->withTrashed()])
+            ->orderByDesc('id');
+        if ($isEmail) {
+            $query->whereRaw('LOWER(TRIM(email)) = ?', [strtolower($contact)]);
+        } else {
+            $digits = self::digits($contact);
+            if (strlen($digits) < 7) {
+                return new Collection;
+            }
+
+            return $query->whereNotNull('phone')->where('phone', '!=', '')
+                ->whereIn('status', ['submitted', 'changes_requested', 'approved', 'issued', 'returned', 'closed'])
+                ->limit(30)->get()
+                ->filter(fn (MaterialRequest $mr) => self::digits($mr->phone) === $digits)
+                ->values();
+        }
+
+        return $query->whereIn('status', ['submitted', 'changes_requested', 'approved', 'issued', 'returned', 'closed'])
+            ->limit(20)->get();
+    }
+
+    /**
+     * Explains a failed exact-item confirmation. Never selects a substitute unit.
+     *
+     * @return array{message: string, errors: array<string, list<string>>, reason: string, reference_code?: string, status?: string, booking_items?: list<string>}
+     */
+    private static function confirmFailurePayload(EquipmentItem $item, string $contact, bool $isEmail): array
+    {
+        $bookings = self::contactBookings($contact, $isEmail);
+        if ($bookings->isEmpty()) {
+            return [
+                'message' => 'No booking found for that phone number or email. Use the same contact you put on the request.',
+                'errors' => ['contact' => ['No booking found for that phone number or email.']],
+                'reason' => 'no_booking',
+            ];
+        }
+
+        $pending = $bookings->first(fn (MaterialRequest $mr) => in_array($mr->status, ['submitted', 'changes_requested'], true));
+        if ($pending && ! $bookings->contains(fn (MaterialRequest $mr) => in_array($mr->status, ['approved', 'issued'], true))) {
+            $label = $pending->status === 'changes_requested' ? 'waiting for changes' : 'not approved yet';
+
+            return [
+                'message' => "We found request {$pending->reference_code}, but it is {$label}. Ask LIA to approve it before confirming pickup of {$item->name}.",
+                'errors' => ['contact' => ["Request {$pending->reference_code} is {$label}."]],
+                'reason' => 'not_approved',
+                'reference_code' => $pending->reference_code,
+                'status' => $pending->status,
+            ];
+        }
+
+        $active = $bookings->first(fn (MaterialRequest $mr) => in_array($mr->status, ['approved', 'issued'], true));
+        if ($active) {
+            $active->loadMissing(['items.equipmentItem' => fn ($q) => $q->withTrashed()]);
+            $names = $active->items->map(fn ($line) => $line->equipmentItem?->name ?? 'item')->filter()->values();
+            $list = $names->isEmpty() ? 'no named items' : $names->implode(', ');
+            $already = $active->items->first(function ($line) use ($item) {
+                return (int) $line->equipment_item_id === (int) $item->id && ($line->qty_issued || $line->status === 'issued');
+            });
+            if ($already) {
+                return [
+                    'message' => "{$item->name} is already marked handed out on booking {$active->reference_code}. If you still need to confirm, ask the storekeeper.",
+                    'errors' => ['contact' => ['This item was already issued on your booking.']],
+                    'reason' => 'already_issued',
+                    'reference_code' => $active->reference_code,
+                ];
+            }
+
+            $needsStorekeeper = $active->items->contains(function ($line) {
+                if ($line->qty_issued || $line->status === 'issued' || $line->issued_at) {
+                    return false;
+                }
+                $listed = $line->equipmentItem;
+
+                return ! $listed || (method_exists($listed, 'trashed') && $listed->trashed());
+            });
+            if ($needsStorekeeper) {
+                return [
+                    'message' => "Contact the storekeeper. Booking {$active->reference_code} lists a unit that is no longer available. They must replace that line with {$item->name} before pickup can be confirmed. Scanning does not substitute another unit.",
+                    'errors' => ['contact' => ['Contact the storekeeper. They must replace the booked unit explicitly.']],
+                    'reason' => 'replacement_required',
+                    'reference_code' => $active->reference_code,
+                ];
+            }
+
+            return [
+                'message' => "Booking {$active->reference_code} is for: {$list}. This QR is {$item->name}, which is not on that list. Ask the storekeeper to replace the booked unit explicitly.",
+                'errors' => ['contact' => ["{$item->name} is not on booking {$active->reference_code}."]],
+                'reason' => 'different_item',
+                'reference_code' => $active->reference_code,
+                'booking_items' => $names->all(),
+            ];
+        }
+
+        $closed = $bookings->first();
+
+        return [
+            'message' => "We found booking {$closed->reference_code}, but it is {$closed->status} and not open for pickup of {$item->name}.",
+            'errors' => ['contact' => ["Booking {$closed->reference_code} is {$closed->status}."]],
+            'reason' => 'inactive_booking',
+            'reference_code' => $closed->reference_code,
+            'status' => $closed->status,
+        ];
     }
 
     // ---- Staff (storekeeper) ----

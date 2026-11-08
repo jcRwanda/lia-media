@@ -172,12 +172,13 @@
             <legend class="px-1 text-sm font-semibold">Dates / Amatariki</legend>
             <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <label class="block text-sm">{{ $label('needed_from')['en'] }} / {{ $label('needed_from')['kn'] }} *
-                    <input name="needed_from" id="needed_from" type="date" required class="mt-1 w-full rounded-lg border p-2">
+                    <input name="needed_from" id="needed_from" type="datetime-local" required step="60" class="mt-1 w-full rounded-lg border p-2">
                 </label>
                 <label class="block text-sm">{{ $label('return_by')['en'] }} / {{ $label('return_by')['kn'] }} *
-                    <input name="return_by" id="return_by" type="date" required class="mt-1 w-full rounded-lg border p-2">
+                    <input name="return_by" id="return_by" type="datetime-local" required step="60" class="mt-1 w-full rounded-lg border p-2">
                 </label>
             </div>
+            <p class="mt-2 text-xs text-neutral-500">Times are Africa/Kigali (UTC+2). / Igihe ni Africa/Kigali (UTC+2).</p>
         </fieldset>
 
         <fieldset class="rounded-xl border border-neutral-200 bg-white p-4">
@@ -878,7 +879,10 @@
             signaturePad.resize();
             updateTypeUi();
             form.classList.add('hidden'); $('lia-steps').classList.add('hidden'); $('success-screen').classList.remove('hidden'); window.scrollTo({ top: 0, behavior: 'smooth' });
-            show('success', 'Request submitted. / Ubusabe bwoherejwe. Reference: ' + (data.reference_code || ''));
+            const overlap = data.booking_overlap && data.booking_overlap.summary
+                ? '\n' + data.booking_overlap.summary.en + ' / ' + data.booking_overlap.summary.kn
+                : '';
+            show('success', 'Request submitted. / Ubusabe bwoherejwe. Reference: ' + (data.reference_code || '') + overlap);
             if (data.status_url) { const box = document.createElement('a'); box.href = data.status_url; box.target = '_blank'; box.className = 'block mt-2 underline text-sm'; box.textContent = 'Track your request / Kurikirana ubusabe bwawe'; $('success').appendChild(box); }
         } catch (e) {
             genericError('The request could not be submitted. Please check your connection and try again.');

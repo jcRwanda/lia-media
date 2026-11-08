@@ -31,7 +31,9 @@ export default function PublicQrPage() {
     });
 
     const item = data?.item;
-    const confirmError = confirm.error instanceof ApiError ? confirm.error.message : confirm.error ? 'Something went wrong. Try again.' : '';
+    const apiError = confirm.error instanceof ApiError ? confirm.error : null;
+    const confirmError = apiError ? apiError.message : confirm.error ? 'Something went wrong. Try again.' : '';
+    const replacementRequired = apiError?.reason === 'replacement_required';
 
     return (
         <div className="mx-auto min-h-screen max-w-md space-y-4 bg-neutral-50 p-4">
@@ -61,7 +63,13 @@ export default function PublicQrPage() {
                         >
                             <label className="block text-sm">Enter the phone number or email you used on your request</label>
                             <Input value={contact} onChange={(e) => setContact(e.target.value)} placeholder="07… or you@example.com" autoComplete="tel" />
-                            {confirmError ? <p className="text-xs text-red-600">{confirmError}</p> : null}
+                            {replacementRequired ? (
+                                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+                                    <div className="font-semibold">Contact the storekeeper</div>
+                                    <p className="mt-1">{confirmError}</p>
+                                    <p className="mt-1 text-xs">This scan does not replace the booked unit. Only a storekeeper can choose the exact item.</p>
+                                </div>
+                            ) : confirmError ? <p className="text-xs text-red-600">{confirmError}</p> : null}
                             <Button type="submit" className="w-full" disabled={confirm.isPending || !contact.trim()}>
                                 {confirm.isPending ? 'Checking…' : 'I received this'}
                             </Button>

@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\DerivativeController;
 use App\Http\Controllers\Api\EquipmentBlockController;
 use App\Http\Controllers\Api\EquipmentCalendarController;
 use App\Http\Controllers\Api\EquipmentItemController;
+use App\Http\Controllers\Api\EquipmentLabelController;
 use App\Http\Controllers\Api\EquipmentQrController;
 use App\Http\Controllers\Api\LookupController;
 use App\Http\Controllers\Api\MaterialRequestAvailabilityController;
@@ -200,6 +201,8 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
             Route::get('/material-requests/{materialRequest}/final-work/{finalWork}/file', [MaterialRequestController::class, 'finalWorkFile']);
         });
         Route::middleware('can:material-requests.manage')->group(function () {
+            Route::get('/material-requests/storekeeper-reminders', [MaterialRequestController::class, 'storekeeperReminders']);
+            Route::get('/material-requests/{materialRequest}/storekeeper-reminder', [MaterialRequestController::class, 'storekeeperReminder']);
             Route::post('/material-requests/{materialRequest}/approve', [MaterialRequestController::class, 'approve']);
             Route::post('/material-requests/{materialRequest}/reject', [MaterialRequestController::class, 'reject']);
             Route::post('/material-requests/{materialRequest}/request-changes', [MaterialRequestController::class, 'requestChanges']);
@@ -209,6 +212,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
         Route::middleware('can:material-requests.issue')->group(function () {
             Route::get('/material-requests/{materialRequest}/pickup-catalog', [MaterialRequestController::class, 'pickupCatalog']);
             Route::post('/material-requests/{materialRequest}/items', [MaterialRequestController::class, 'addItemAtPickup']);
+            Route::post('/material-requests/{materialRequest}/items/{item}/replace', [MaterialRequestController::class, 'replacePickupItem']);
             Route::delete('/material-requests/{materialRequest}/items/{item}', [MaterialRequestController::class, 'removePickupItem']);
             Route::post('/material-requests/{materialRequest}/issue', [MaterialRequestController::class, 'issue']);
         });
@@ -219,6 +223,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
         // Storekeeper portal
         Route::middleware('can:material-requests.view')->group(function () {
             Route::get('/storekeeper/bookings', [StorekeeperController::class, 'bookings']);
+            Route::get('/operations/reminders', [StorekeeperController::class, 'operationsReminders']);
         });
         Route::middleware('can:material-requests.issue')->group(function () {
             Route::get('/store/dashboard', [StorekeeperController::class, 'dashboard']);
@@ -229,7 +234,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
         // Equipment inventory
         Route::middleware('can:equipment.manage')->group(function () {
             Route::get('/equipment-items', [EquipmentItemController::class, 'index']);
-            Route::get('/equipment-labels/pdf', [\App\Http\Controllers\Api\EquipmentLabelController::class, 'pdf']);
+            Route::get('/equipment-labels/pdf', [EquipmentLabelController::class, 'pdf']);
             Route::post('/equipment-items', [EquipmentItemController::class, 'store']);
             Route::get('/equipment-items/{equipmentItem}', [EquipmentItemController::class, 'show']);
             Route::get('/equipment-calendar', [EquipmentCalendarController::class, 'index']);

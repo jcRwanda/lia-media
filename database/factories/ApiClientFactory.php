@@ -25,6 +25,7 @@ class ApiClientFactory extends Factory
             'allowed_origin' => null,
             'webhook_url' => null,
             'active' => true,
+            'allows_alumni_certificate_exempt' => false,
         ];
     }
 }

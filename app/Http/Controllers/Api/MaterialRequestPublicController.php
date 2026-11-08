@@ -12,6 +12,7 @@ use App\Models\MaterialRequest;
 use App\Models\MaterialRequestFinalWork;
 use App\Models\MaterialRequestItem;
 use App\Models\User;
+use App\Services\AlumniCertificateExemptVerifier;
 use App\Services\EquipmentAvailabilityService;
 use App\Services\MaterialRequestAuditService;
 use App\Services\MaterialRequestDecisionService;
@@ -20,7 +21,8 @@ use App\Services\MaterialRequestService;
 use App\Services\MaterialRequestWebhookService;
 use App\Storage\ObjectStorage;
 use App\Storage\R2ObjectStorage;
-use Carbon\CarbonImmutable;
+use App\Support\ApiValidationFailure;
+use App\Support\BookingSchedule;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -40,6 +42,9 @@ class MaterialRequestPublicController extends Controller
         private EquipmentAvailabilityService $availability,
         private MaterialRequestWebhookService $webhooks,
         private MaterialRequestDecisionService $decisions,
+        private AlumniCertificateExemptVerifier $certificateExempt,
+        private ApiValidationFailure $validationFailures,
+        private BookingSchedule $schedule,
     ) {}
 
     /**
@@ -228,7 +233,7 @@ class MaterialRequestPublicController extends Controller
 
         $validator = Validator::make($data, $rules);
         if ($validator->fails()) {
-            return response()->json(['message' => 'Validation failed', 'errors' => $validator->errors()], 422);
+            return $this->validationFailures->response($request, $validator->errors());
         }
 
         $validated = $validator->validated();
@@ -236,8 +241,14 @@ class MaterialRequestPublicController extends Controller
             'equipment_item_id' => (int) $item['equipment_item_id'],
             'qty' => (int) $item['qty'],
         ], $validated['items']);
-        $neededFrom = CarbonImmutable::parse($validated['needed_from'])->startOfDay();
-        $returnBy = CarbonImmutable::parse($validated['return_by'])->startOfDay();
+        $parsedStart = $this->schedule->parseInput((string) $validated['needed_from']);
+        $parsedEnd = $this->schedule->parseInput((string) $validated['return_by']);
+        if (! $this->schedule->endsAfter($parsedStart, $parsedEnd)) {
+            throw ValidationException::withMessages(['return_by' => ['The return must be after the pick-up. / Gusubiza bigomba kuba nyuma yo gufata.']]);
+        }
+        [$windowStart, $windowEnd] = $this->schedule->range($parsedStart, $parsedEnd);
+        $neededFrom = $this->availability->bookingDay($parsedStart['date']);
+        $returnBy = $this->availability->bookingDay($parsedEnd['date']);
 
         if ($requesterType === 'trainee') {
             $itemIds = array_column($bookingLines, 'equipment_item_id');
@@ -287,7 +298,8 @@ class MaterialRequestPublicController extends Controller
             $validated['purpose_project_description'] = $validated['purpose_project_description'] ?? null;
         }
 
-        $this->availability->assertCanBook($bookingLines, $neededFrom, $returnBy);
+        $this->availability->assertCanBook($bookingLines, $neededFrom, $returnBy, null, true, false, $windowStart, $windowEnd);
+        $this->availability->assertBookingOverlap($bookingLines, $windowStart, $windowEnd);
 
         $reusedRequest = null;
         if ($requesterType !== 'trainee') {
@@ -315,8 +327,11 @@ class MaterialRequestPublicController extends Controller
             throw ValidationException::withMessages(['id_document' => 'Upload your ID (image or PDF).']);
         }
 
+        $apiClient = $request->attributes->get('api_client');
+        $apiClient = $apiClient instanceof ApiClient ? $apiClient : null;
+
         $certificate = $validated['requester_type'] === 'alumni'
-            ? $this->resolveCertificate($validated, $request->attributes->get('api_client') instanceof ApiClient)
+            ? $this->resolveCertificate($validated, $apiClient, $request)
             : null;
 
         $signature = $validated['signature'] instanceof UploadedFile
@@ -324,12 +339,12 @@ class MaterialRequestPublicController extends Controller
             : $this->files->storeSignature((string) $validated['signature']);
 
         $cohort = ! empty($validated['cohort_id']) ? Cohort::query()->find($validated['cohort_id']) : null;
-        $apiClient = $request->attributes->get('api_client');
-        $apiClient = $apiClient instanceof ApiClient ? $apiClient : null;
         $source = $apiClient?->name ?? 'Direct/Hosted form';
 
-        $materialRequest = DB::transaction(function () use ($validated, $bookingLines, $neededFrom, $returnBy, $idDocument, $signature, $cohort, $apiClient, $source, $certificate) {
-            $this->availability->assertCanBook($bookingLines, $neededFrom, $returnBy, lockItems: true);
+        $bookingOverlap = null;
+        $materialRequest = DB::transaction(function () use ($validated, $bookingLines, $neededFrom, $returnBy, $idDocument, $signature, $cohort, $apiClient, $source, $certificate, $parsedStart, $parsedEnd, $windowStart, $windowEnd, &$bookingOverlap) {
+            $this->availability->assertCanBook($bookingLines, $neededFrom, $returnBy, null, true, true, $windowStart, $windowEnd);
+            $bookingOverlap = $this->availability->assertBookingOverlap($bookingLines, $windowStart, $windowEnd, null, true);
 
             $materialRequest = MaterialRequest::query()->create([
                 'api_client_id' => $apiClient?->id,
@@ -358,8 +373,10 @@ class MaterialRequestPublicController extends Controller
                 'project_location' => $validated['project_location'] ?? null,
                 'shoot_location' => $validated['shoot_location'] ?? null,
                 'shoot_type' => $validated['shoot_type'] ?? null,
-                'needed_from' => $validated['needed_from'],
-                'return_by' => $validated['return_by'],
+                'needed_from' => $parsedStart['date'],
+                'needed_from_at' => $parsedStart['at'],
+                'return_by' => $parsedEnd['date'],
+                'return_by_at' => $parsedEnd['at'],
                 'terms_accepted' => ! empty($validated['terms_accepted']) || ! empty($validated['terms_credit']),
                 'terms_credit' => ! empty($validated['terms_credit']) || ! empty($validated['terms_accepted']),
                 'consent_declaration' => true,
@@ -418,12 +435,21 @@ class MaterialRequestPublicController extends Controller
             // ignore mail failures
         }
 
-        return response()->json([
+        $body = [
             'message' => 'Request submitted',
             'reference_code' => $materialRequest->reference_code,
             'status' => $materialRequest->status,
             'status_url' => $this->decisions->statusUrl($materialRequest),
-        ], 201);
+        ];
+        if (($certificate['source'] ?? null) === AlumniCertificateExemptVerifier::SOURCE) {
+            $body['alumni_certificate_reminder'] = 'Booking accepted. A graduation certificate is not required for this grandfathered alumni account and does not block the request.';
+        }
+        if (is_array($bookingOverlap)) {
+            $body['booking_overlap'] = $bookingOverlap;
+        }
+        $body['schedule'] = $this->schedule->presentRequest($materialRequest);
+
+        return response()->json($body, 201);
     }
 
     /** Public decision/status page data, addressed by the unguessable request uuid. */
@@ -471,14 +497,25 @@ class MaterialRequestPublicController extends Controller
             }
         }
         $bookingLines = collect($lines)->map(fn ($q, $id) => ['equipment_item_id' => $id, 'qty' => $q])->values()->all();
-        $from = CarbonImmutable::parse($validated['needed_from'])->startOfDay();
-        $to = CarbonImmutable::parse($validated['return_by'])->startOfDay();
-        $this->availability->assertCanBook($bookingLines, $from, $to, $mr->id);
+        $parsedStart = $this->schedule->parseInput((string) $validated['needed_from']);
+        $parsedEnd = $this->schedule->parseInput((string) $validated['return_by']);
+        if (! $this->schedule->endsAfter($parsedStart, $parsedEnd)) {
+            throw ValidationException::withMessages(['return_by' => ['The return must be after the pick-up. / Gusubiza bigomba kuba nyuma yo gufata.']]);
+        }
+        [$windowStart, $windowEnd] = $this->schedule->range($parsedStart, $parsedEnd);
+        $from = $this->availability->bookingDay($parsedStart['date']);
+        $to = $this->availability->bookingDay($parsedEnd['date']);
+        $this->availability->assertCanBook($bookingLines, $from, $to, $mr->id, true, false, $windowStart, $windowEnd);
+        $this->availability->assertBookingOverlap($bookingLines, $windowStart, $windowEnd, $mr->id);
 
-        DB::transaction(function () use ($mr, $validated, $bookingLines) {
+        DB::transaction(function () use ($mr, $validated, $bookingLines, $from, $to, $parsedStart, $parsedEnd, $windowStart, $windowEnd) {
+            $this->availability->assertCanBook($bookingLines, $from, $to, $mr->id, false, true, $windowStart, $windowEnd);
+            $this->availability->assertBookingOverlap($bookingLines, $windowStart, $windowEnd, $mr->id, true);
             $mr->update(array_filter([
-                'needed_from' => $validated['needed_from'],
-                'return_by' => $validated['return_by'],
+                'needed_from' => $parsedStart['date'],
+                'needed_from_at' => $parsedStart['at'],
+                'return_by' => $parsedEnd['date'],
+                'return_by_at' => $parsedEnd['at'],
                 'purpose_project_description' => $validated['purpose_project_description'] ?? null,
             ], fn ($v) => $v !== null) + ['status' => 'submitted']);
             $mr->items()->delete();
@@ -520,6 +557,7 @@ class MaterialRequestPublicController extends Controller
             'full_name' => $mr->full_name,
             'needed_from' => $mr->needed_from?->format('Y-m-d'),
             'return_by' => $mr->return_by?->format('Y-m-d'),
+            'schedule' => $this->schedule->presentRequest($mr),
             'purpose_project_description' => $mr->purpose_project_description,
             'review_note' => $mr->review_note,
             'decision' => $this->decisions->decision($mr),
@@ -532,7 +570,30 @@ class MaterialRequestPublicController extends Controller
                 'status' => $item->status,
                 'added_at_pickup' => (bool) $item->added_at_pickup,
             ])->values(),
+            'booking_overlap' => $this->bookingOverlapFor($mr),
         ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function bookingOverlapFor(MaterialRequest $mr): ?array
+    {
+        if (! $mr->needed_from || ! $mr->return_by || $mr->items->isEmpty()) {
+            return null;
+        }
+        if (! in_array($mr->status, EquipmentAvailabilityService::ACTIVE_OVERLAP_STATUSES, true)) {
+            return null;
+        }
+
+        $lines = $mr->items->map(fn ($item) => [
+            'equipment_item_id' => (int) $item->equipment_item_id,
+            'qty' => (int) ($item->qty_approved ?? $item->qty_requested ?: 1),
+        ])->all();
+
+        [$start, $end] = $this->schedule->rangeFor($mr);
+
+        return $this->availability->bookingOverlap($lines, $start, $end, $mr->id);
     }
 
     /**
@@ -547,7 +608,7 @@ class MaterialRequestPublicController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json(['message' => 'Validation failed', 'errors' => $validator->errors()], 422);
+            return $this->validationFailures->response($request, $validator->errors());
         }
 
         $materialRequest = MaterialRequest::query()
@@ -678,7 +739,7 @@ class MaterialRequestPublicController extends Controller
 
         $allowed = config('material-requests.final_work_allowed_mimes', []);
         if (! empty($allowed) && ! in_array($data['content_type'], $allowed, true)) {
-            return response()->json(['message' => 'Validation failed', 'errors' => ['content_type' => ['File type not allowed.']]], 422);
+            return $this->validationFailures->response($request, ['content_type' => ['File type not allowed.']]);
         }
 
         $ext = pathinfo($data['filename'], PATHINFO_EXTENSION);
@@ -745,7 +806,7 @@ class MaterialRequestPublicController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json(['message' => 'Validation failed', 'errors' => $validator->errors()], 422);
+            return $this->validationFailures->response($request, $validator->errors());
         }
 
         $data = $validator->validated();
@@ -830,11 +891,12 @@ class MaterialRequestPublicController extends Controller
     /**
      * Alumni submit their graduation certificate once: a new upload or https link wins, otherwise the
      * certificate from their latest earlier alumni request (same email) is reused.
-     * Required on the hosted form; for API clients only when material-requests.alumni_certificate_required_for_api is on.
+     * Required on the hosted form. For API clients it is required when alumni_certificate_required_for_api
+     * is on, unless this opted-in client presents a valid grandfather proof.
      *
      * @return array{path: ?string, mime: ?string, name: ?string, url: ?string, source: string}|null
      */
-    private function resolveCertificate(array $validated, bool $viaApi): ?array
+    private function resolveCertificate(array $validated, ?ApiClient $apiClient, Request $request): ?array
     {
         $upload = $validated['certificate'] ?? null;
         if ($upload instanceof UploadedFile || (is_string($upload) && str_starts_with($upload, 'data:'))) {
@@ -855,7 +917,13 @@ class MaterialRequestPublicController extends Controller
                 'name' => $previous->certificate_name, 'url' => $previous->certificate_url, 'source' => 'reused',
             ];
         }
-        $required = ! $viaApi || (bool) config('material-requests.alumni_certificate_required_for_api', false);
+        if ($this->certificateExempt->grants($request, $apiClient, (string) $validated['email'])) {
+            return [
+                'path' => null, 'mime' => null, 'name' => null, 'url' => null,
+                'source' => AlumniCertificateExemptVerifier::SOURCE,
+            ];
+        }
+        $required = ! $apiClient instanceof ApiClient || (bool) config('material-requests.alumni_certificate_required_for_api', false);
         if ($required) {
             throw ValidationException::withMessages(['certificate' => 'Alumni must upload their graduation certificate (image or PDF). / Ohereza impamyabumenyi yawe.']);
         }

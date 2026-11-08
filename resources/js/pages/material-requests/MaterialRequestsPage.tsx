@@ -1,9 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { api } from '@/lib/api';
-import { buildMaterialRequestWhatsappLink } from '@/lib/utils';
 import { useState } from 'react';
-import { MessageCircle } from 'lucide-react';
+import { OperationsReminders } from '@/components/OperationsReminders';
 
 function buildQuery(params: Record<string, any>) {
     const q = new URLSearchParams();
@@ -39,6 +38,7 @@ export default function MaterialRequestsPage() {
 
     return (
         <div className="p-4 space-y-4">
+            <OperationsReminders />
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <h1 className="text-xl font-semibold">Material / Equipment Requests</h1>
                 <div className="flex flex-wrap gap-2">
@@ -112,15 +112,7 @@ export default function MaterialRequestsPage() {
                                 <td className="p-2">{r.created_at?.slice(0,10)}</td>
                                 <td className="p-2">
                                     <div className="flex items-center gap-2">
-                                        <Link className="text-blue-600" to={`/material-requests/${r.id}`}>View</Link>
-                                        {['approved', 'issued', 'returned', 'closed'].includes(r.status) ? (() => {
-                                            const url = buildMaterialRequestWhatsappLink(r);
-                                            return url ? (
-                                                <a className="inline-flex items-center gap-1 text-emerald-700" href={url} target="_blank" rel="noreferrer">
-                                                    <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
-                                                </a>
-                                            ) : null;
-                                        })() : null}
+                                        <Link className="text-blue-600" to={`/material-requests/${r.id}`}>Open booking</Link>
                                     </div>
                                 </td>
                             </tr>

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { PackagePlus, ScanLine, Search, Trash2, X } from 'lucide-react';
+import { ArrowLeftRight, PackagePlus, ScanLine, Search, Trash2, X } from 'lucide-react';
 import { api, fieldErrors } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -116,6 +116,9 @@ export function AddAtPickupPanel({
     const [qtyById, setQtyById] = useState<Record<number, string>>({});
     const [error, setError] = useState('');
     const [scanning, setScanning] = useState(false);
+    const [replaceScanning, setReplaceScanning] = useState(false);
+    const [replacingId, setReplacingId] = useState<number | null>(null);
+    const [candidate, setCandidate] = useState<CatalogItem | null>(null);
     const [selectedAccessories, setSelectedAccessories] = useState<{ name: string; accessories: { id: number; name: string }[] } | null>(null);
 
     useEffect(() => {
@@ -176,7 +179,56 @@ export function AddAtPickupPanel({
         [add],
     );
 
+    const replace = useMutation({
+        mutationFn: async (payload: { lineId: number; equipmentItemId: number }) =>
+            api(`/material-requests/${requestId}/items/${payload.lineId}/replace`, {
+                method: 'POST',
+                json: { equipment_item_id: payload.equipmentItemId },
+            }),
+        onSuccess: () => {
+            setError('');
+            setCandidate(null);
+            setReplacingId(null);
+            setReplaceScanning(false);
+            invalidate();
+        },
+        onError: (e) => {
+            const errors = fieldErrors(e);
+            setError(Object.values(errors)[0] || (e instanceof Error ? e.message : 'Could not replace item'));
+        },
+    });
+
+    const onReplaceToken = useCallback(async (token: string) => {
+        setError('');
+        try {
+            const res = await api<{
+                item: { id: number; name: string; serial_number: string | null; category: string | null; condition: string | null; photo_url: string | null; images: { id: number; url: string | null }[] };
+            }>(`/equipment-scan/${token}`);
+            const scanned = res.item;
+            setCandidate({
+                id: scanned.id,
+                name: scanned.name,
+                category: scanned.category,
+                serial_number: scanned.serial_number,
+                condition: scanned.condition,
+                available_qty: 1,
+                already_on_request: false,
+                unavailable: false,
+                unavailable_reason: null,
+                photo_url: scanned.photo_url,
+                images: scanned.images || [],
+                accessories: [],
+            });
+            setReplaceScanning(false);
+        } catch (e) {
+            const errors = fieldErrors(e);
+            setError(Object.values(errors)[0] || (e instanceof Error ? e.message : 'That QR is not an in-stock unit.'));
+        }
+    }, []);
+
     const pickupAdds = items.filter((i) => i.added_at_pickup && !i.qty_issued);
+    const replaceable = items.filter((i) => !i.qty_issued && i.status !== 'issued');
+    const replacing = replaceable.find((line) => line.id === replacingId) || null;
 
     return (
         <div className="space-y-3 rounded-xl border border-dashed border-lia-200 bg-gradient-to-b from-lia-50/60 to-white p-3">
@@ -193,6 +245,92 @@ export function AddAtPickupPanel({
             </div>
 
             {error ? <div className="rounded-lg border border-red-200 bg-red-50 p-2 text-sm text-red-700">{error}</div> : null}
+
+            {replaceable.length > 0 ? (
+                <div className="space-y-2 rounded-lg border border-neutral-200 bg-white p-2">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-neutral-600">Replace a booked unit</div>
+                    <p className="text-[11px] text-neutral-500">Choose the exact in-stock unit. A borrower scan never swaps the booking.</p>
+                    {replaceable.map((line) => (
+                        <div key={line.id} className="flex items-center gap-2 text-sm">
+                            <div className="min-w-0 flex-1">
+                                <div className="truncate font-medium">{line.equipment_item?.name || 'Booked item'}</div>
+                                <div className="text-[11px] text-neutral-500">{line.equipment_item?.serial_number ? `SN ${line.equipment_item.serial_number}` : 'No serial on the booked line'}</div>
+                            </div>
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => {
+                                    setError('');
+                                    setCandidate(null);
+                                    setReplacingId(replacingId === line.id ? null : line.id);
+                                    setReplaceScanning(false);
+                                }}
+                            >
+                                <ArrowLeftRight className="h-4 w-4" /> Replace item
+                            </Button>
+                        </div>
+                    ))}
+                    {replacing ? (
+                        <div className="space-y-2 border-t border-neutral-100 pt-2">
+                            <div className="text-xs text-neutral-600">Replacement for {replacing.equipment_item?.name || 'this line'}</div>
+                            <Button type="button" size="sm" variant="secondary" onClick={() => setReplaceScanning((v) => !v)}>
+                                <ScanLine className="h-4 w-4" /> {replaceScanning ? 'Hide scanner' : 'Scan the exact unit'}
+                            </Button>
+                            {replaceScanning ? <MiniScanner onToken={onReplaceToken} onClose={() => setReplaceScanning(false)} /> : null}
+                            <div className="max-h-48 space-y-2 overflow-y-auto">
+                                {(catalog.data?.items || []).filter((item) => item.id !== replacing.equipment_item?.id).map((item) => {
+                                    const photo = item.photo_url || item.images[0]?.url;
+                                    const blocked = item.unavailable || item.available_qty <= 0;
+                                    return (
+                                        <button
+                                            key={item.id}
+                                            type="button"
+                                            disabled={blocked}
+                                            onClick={() => setCandidate(item)}
+                                            className={`flex w-full gap-2 rounded-lg border p-2 text-left ${candidate?.id === item.id ? 'border-lia-600 bg-lia-50' : 'border-neutral-200 bg-white'} ${blocked ? 'opacity-60' : ''}`}
+                                        >
+                                            <div className="h-12 w-12 shrink-0 overflow-hidden rounded bg-neutral-100">
+                                                {photo ? <img src={photo} alt="" className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center text-[10px] text-neutral-400">No photo</div>}
+                                            </div>
+                                            <div className="min-w-0">
+                                                <div className="truncate text-sm font-medium">{item.name}</div>
+                                                <div className="text-[11px] text-neutral-500">
+                                                    {item.serial_number ? `SN ${item.serial_number}` : 'No serial'}
+                                                    {` · ${item.available_qty} available`}
+                                                    {item.condition ? ` · ${item.condition}` : ''}
+                                                </div>
+                                                {blocked ? <div className="text-[11px] text-red-600">{item.unavailable_reason || 'Not available'}</div> : null}
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            {candidate ? (
+                                <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm text-amber-950">
+                                    <div className="font-semibold">Confirm this exact change</div>
+                                    <p>
+                                        Replace {replacing.equipment_item?.name || 'the booked unit'}
+                                        {replacing.equipment_item?.serial_number ? ` (SN ${replacing.equipment_item.serial_number})` : ''} with {candidate.name}
+                                        {candidate.serial_number ? ` (SN ${candidate.serial_number})` : ''}. Stock and date conflicts are checked when you confirm.
+                                    </p>
+                                    <div className="flex gap-2">
+                                        <Button type="button" size="sm" variant="secondary" onClick={() => setCandidate(null)}>Cancel</Button>
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            disabled={replace.isPending}
+                                            onClick={() => replace.mutate({ lineId: replacing.id, equipmentItemId: candidate.id })}
+                                        >
+                                            {replace.isPending ? 'Replacing…' : 'Confirm replacement'}
+                                        </Button>
+                                    </div>
+                                </div>
+                            ) : null}
+                        </div>
+                    ) : null}
+                </div>
+            ) : null}
 
             {scanning ? <MiniScanner onToken={onToken} onClose={() => setScanning(false)} /> : null}
 

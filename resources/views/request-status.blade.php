@@ -62,14 +62,16 @@
         const d = r.decision || {};
         let html = `<div class="flex items-center justify-between"><div><div class="text-xs font-medium uppercase tracking-wide text-gray-500">Reference</div><div class="font-mono text-lg font-semibold">${esc(r.reference_code)}</div></div><span class="px-3 py-1 rounded-full text-sm font-semibold ${cls}">${esc(label)}</span></div>
             <div class="text-sm text-gray-600 mt-2">${esc(r.full_name)} · ${esc(r.needed_from)} → ${esc(r.return_by)}</div>`;
+        if (r.booking_overlap && r.booking_overlap.summary) {
+            html += `<div class="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"><b>${esc(r.booking_overlap.summary.en)}</b><div class="mt-1">${esc(r.booking_overlap.summary.kn)}</div></div>`;
+        }
         if (r.review_note) {
             html += `<div class="mt-3 p-3 rounded-xl border-l-4 border-lia-500 bg-lia-50 text-sm"><b>${r.status === 'rejected' ? 'Reason' : 'Note from LIA'}:</b> ${esc(r.review_note)}</div>`;
         }
-        if (d.storekeeper) {
+        if ((r.status === 'approved' || r.status === 'issued') && d.storekeeper && d.storekeeper.whatsapp_url) {
             html += `<div class="mt-3 text-sm">Pick-up contact: <b>${esc(d.storekeeper.name)}</b> (${esc(d.storekeeper.phone)})</div>`;
-            if (d.storekeeper.whatsapp_url) {
-                html += `<a href="${esc(d.storekeeper.whatsapp_url)}" target="_blank" rel="noopener" class="inline-flex mt-2 px-4 py-2.5 rounded-xl bg-green-600 font-semibold text-white text-sm">Message the storekeeper on WhatsApp</a>`;
-            }
+            html += `<a href="${esc(d.storekeeper.whatsapp_url)}" target="_blank" rel="noopener" class="inline-flex mt-2 px-4 py-2.5 rounded-xl bg-green-600 font-semibold text-white text-sm">Message the storekeeper on WhatsApp</a>`;
+            html += `<p class="mt-1 text-xs text-gray-500">This opens WhatsApp on your phone. LIA does not send the message.</p>`;
         }
         html += '<table class="w-full text-sm mt-4"><thead><tr class="text-left text-xs uppercase tracking-wide text-gray-500"><th>Item</th><th>Requested</th><th>Approved</th></tr></thead><tbody>'
             + r.items.map(i => `<tr class="border-t border-gray-100"><td class="py-2 font-medium">${esc(i.name)}${i.added_at_pickup ? ' <span class="ml-1 rounded-full bg-lia-50 px-2 py-0.5 text-[10px] font-semibold text-lia-700">Added at pickup</span>' : ''}</td><td>${esc(i.qty_requested)}</td><td>${esc(i.qty_approved ?? '-')}</td></tr>`).join('')

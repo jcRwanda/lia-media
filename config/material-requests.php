@@ -11,7 +11,11 @@ return [
     'id_document_max_bytes' => (int) env('MATERIAL_REQUEST_ID_MAX_BYTES', 10485760),
     'certificate_max_bytes' => (int) env('MATERIAL_REQUEST_CERTIFICATE_MAX_BYTES', 10485760),
     // Alumni must give a graduation certificate once. Hosted form: always. API clients (learning portal): when enabled.
+    // Keep MATERIAL_REQUEST_ALUMNI_CERT_REQUIRED_API=true in production. Grandfathered alumni skip the file only
+    // with a signed proof from an API client that has allows_alumni_certificate_exempt enabled.
     'alumni_certificate_required_for_api' => (bool) env('MATERIAL_REQUEST_ALUMNI_CERT_REQUIRED_API', false),
+    'alumni_certificate_exempt_ttl' => (int) env('MATERIAL_REQUEST_ALUMNI_CERT_EXEMPT_TTL', 600),
+    'alumni_certificate_exempt_future_skew' => (int) env('MATERIAL_REQUEST_ALUMNI_CERT_EXEMPT_FUTURE_SKEW', 30),
     'signature_max_bytes' => 2097152,
     'final_work_max_bytes' => (int) env('MATERIAL_REQUEST_FINAL_WORK_MAX_BYTES', 524288000),
     'final_work_allowed_mimes' => [

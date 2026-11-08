@@ -7,13 +7,13 @@ use App\Models\EquipmentItem;
 use App\Models\MaterialRequest;
 use App\Models\MaterialRequestItem;
 use App\Services\MaterialRequestService;
+use App\Services\OperationalReminderService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 
 class StorekeeperController extends Controller
 {
-    public function __construct(private MaterialRequestService $files) {}
+    public function __construct(private MaterialRequestService $files, private OperationalReminderService $reminders) {}
 
     /**
      * Bookings grouped into storekeeper hand-out / check-in tabs.
@@ -79,6 +79,19 @@ class StorekeeperController extends Controller
             ],
             'bookings' => collect($active)->map(fn (MaterialRequest $mr) => $this->present($mr))->values(),
         ]);
+    }
+
+    /**
+     * Live 72-hour hand-out and return obligations. Derived from bookings, not a sent message.
+     */
+    public function operationsReminders(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if (! ($user?->canDo('material-requests.view') || $user?->canDo('material-requests.issue'))) {
+            abort(403);
+        }
+
+        return response()->json($this->reminders->snapshot());
     }
 
     /**

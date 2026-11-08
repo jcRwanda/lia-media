@@ -35,6 +35,7 @@ Errors use HTTP status codes and this shape:
 ```json
 {
   "message": "Validation failed",
+  "correlation_id": "6f1c0b4e-1c2d-4a7e-9b3a-0d5e8f7a6b2c",
   "errors": {
     "needed_from": ["The selected dates overlap a blocked period (Maintenance)."],
     "items.0.qty": ["Only 2 of Camera available on 2026-11-03 (requested 5)."]
@@ -43,7 +44,62 @@ Errors use HTTP status codes and this shape:
 ```
 
 `401` means a missing/unknown/disabled key. `403` means the key is valid but the browser origin does not match.
-`422` covers validation, booking rules, blocked dates and stock conflicts.
+
+### Overlapping requests
+
+Dates are inclusive Kigali (`Africa/Kigali`) calendar days. A booking that ends on a day overlaps one that starts that same day. The next day does not overlap.
+
+Active requests are `submitted`, `changes_requested`, `approved`, and `issued`. Rejected, returned, and closed requests are ignored. Distinct bookings are counted, not duplicate lines on one request.
+
+Up to 3 active requests may cover the same equipment on overlapping dates. The 2nd and 3rd are stored and the response includes `booking_overlap` with `level` `not_guaranteed`. The 4th is rejected with `422` and no row is created. Physical stock still applies to approval and issue: a second approval is refused when approved or issued quantity already uses the stock. Issuing an already approved reservation is not blocked by other pending requests.
+
+```json
+{
+  "booking_overlap": {
+    "timezone": "Africa/Kigali",
+    "max_active_requests": 3,
+    "date_semantics": "inclusive_kigali_calendar_dates",
+    "level": "pending",
+    "summary": {
+      "en": "Your booking is pending a decision and is not confirmed yet.",
+      "kn": "Ubusabe bwawe burategereje icyemezo kandi ntiburabonezwa."
+    },
+    "warnings": [
+      {
+        "equipment_item_id": 12,
+        "equipment_name": "Canon R body",
+        "active_requests_before": 0,
+        "position": 1,
+        "level": "pending",
+        "guaranteed": false,
+        "line_index": 0,
+        "message": { "en": "…", "kn": "…" }
+      }
+    ]
+  }
+}
+```
+
+`level` is `pending`, `not_guaranteed`, or, on the error path only, the validation message. Availability `daily` adds `pending_request_count` and `active_request_count`. `available_qty` still counts approved and issued quantity only.
+
+`needed_from` and `return_by` stay calendar dates (`Y-m-d`) so the current learning portal can keep sending dates. A date with no clock time is stored without inventing a time and is labeled "time not specified". Send `2026-12-03T09:30` (Africa/Kigali, UTC+2) or an ISO instant with an offset when the portal collects a time. The response `schedule.needed_from.at` / `schedule.return_by.at` are null for date-only values and an ISO string with `+02:00` when a time was given. Return must be after pick-up. Overlap uses those instants: a booking that ends at 10:00 does not block one that starts at 10:00. Legacy date-only rows still occupy the whole Kigali day.
+
+### Storekeeper WhatsApp reminders
+
+`GET /api/material-requests/{id}/storekeeper-reminder?purpose=pickup|return|confirm_return` and `GET /api/material-requests/storekeeper-reminders` are for staff who can manage requests. The link is `https://wa.me/{storekeeper}` using Settings → Storekeeper WhatsApp, or else the storekeeper profile phone. The borrower's number is never used. If neither number is set, `setup_required` is true and `whatsapp_url` is null. The preview includes the reference, item names and quantities, the Kigali due label, and a staff booking link. It does not include email, national ID, certificates, or file URLs. Opening the link does not send a message from this server and does not record a hand-out or a return.
+
+The borrower status page and `decision.storekeeper` include a `wa.me` link only when `status` is `approved` or `issued`. `submitted`, `changes_requested`, `rejected`, `returned`, and `closed` set `decision.storekeeper` to null, including on the webhook, so the storekeeper number is not in those payloads. The link uses Settings → Storekeeper WhatsApp, otherwise the first active storekeeper profile phone, normalized to `250...`. If neither is set, the contact block is omitted. The borrower opens WhatsApp themselves. This is separate from the staff reminder above.
+
+### In-app 3-day operations list
+
+`GET /api/operations/reminders` is for anyone with `material-requests.view` or `material-requests.issue` (management and storekeeper by the current permission map, not a hard-coded role check in the list itself). It is computed from live bookings on each request. There is no stored alert and no dismiss flag, so a still-outstanding item cannot be hidden, a reschedule changes the list immediately, and the same booking is not alerted twice.
+
+The window is 72 hours from now in Africa/Kigali. A stored clock time is that instant. A date-only value stays “time not specified”: a pick-up is due on that calendar day and overdue only after the day has passed; a return is due at the end of its calendar day. `upcoming_pickups` are approved (or partly issued) lines still waiting to be handed out. `returns_due` are issued quantities not yet checked in. Overdue rows are separate. `pending_approval` is submitted or changes-requested work inside the window and is not a confirmed handover. Rejected, closed, and fully returned bookings are omitted. The payload has the borrower name, reference, outstanding item and quantity, schedule label, and a staff booking path. It does not include phone, email, or WhatsApp numbers. `channels.email`, `sms`, and `whatsapp` are false. This list does not send anything.
+
+The existing `material-requests:overdue-reminder` command is separate. The code schedules it daily at 08:00 and it emails the borrower. This change does not add a schedule entry and does not turn that email off.
+`422` covers validation, booking rules, blocked dates and stock conflicts. Each API validation failure is logged as
+`API validation failed.` with `correlation_id`, HTTP status, route, and the failing field names. Submitted values,
+files, headers, and the request body are not written to that log. Quote `correlation_id` when asking which field failed.
 
 ## Endpoints
 
@@ -239,6 +295,60 @@ Submission rules applied by the server:
 - `client` and `alumni` need an ID document; `trainee`/`alumni` need a `cohort_id`.
 - The request is recorded with `source` = the API client name and `source_detail` from the payload.
   Requests from the hosted/plain form use `Direct/Hosted form`.
+- Alumni still need a graduation certificate once (`certificate` upload or `certificate_url`) when
+  `MATERIAL_REQUEST_ALUMNI_CERT_REQUIRED_API=true`. Keep that flag on. A previous certificate for the same
+  email is reused. The hosted form never skips it.
+
+### Grandfathered alumni (signed exemption)
+
+Current portal accounts that were already registered when the certificate rule started may book without a file.
+The portal keeps that fact (`users.alumni_certificate_grandfathered`) and, only for those accounts, adds four
+fields to the server-to-server submit. New alumni omit the fields and must send a certificate once.
+
+```json
+{
+  "alumni_certificate_exempt_user": "42",
+  "alumni_certificate_exempt_email": "alum@example.com",
+  "alumni_certificate_exempt_at": 1730000000,
+  "alumni_certificate_exempt_sig": "<hex hmac>"
+}
+```
+
+The signature is hex HMAC-SHA256 (optional `sha256=` prefix) of this exact string, using the portal API key
+(`LIA_MEDIA_API_KEY` / `X-LIA-Key`):
+
+```text
+alumni-certificate-grandfathered|{portal user id}|{account email}|{unix time}
+```
+
+`{account email}` is the exact `alumni_certificate_exempt_email` value (do not lowercase it inside the HMAC).
+`{portal user id}` is the portal user id as digits or a short token. `{unix time}` is 10-digit Unix seconds.
+The proof is valid for 600 seconds and is rejected when it is more than 30 seconds in the future.
+
+Media accepts the booking only when all of the following hold. Anything else is the normal certificate error;
+a boolean such as `alumni_certificate_exempt=true` does nothing.
+
+- The request authenticated as an active API client with `allows_alumni_certificate_exempt` enabled.
+  Other clients, the hosted form, and anonymous calls cannot exempt.
+- The HMAC matches that client's decrypted `prefill_secret` (the same value as the API key when the client
+  was created by `material-requests:client`, or after that secret is backfilled).
+- The submitted booking `email` matches `alumni_certificate_exempt_email` after trim and lowercase.
+
+A `201` then includes `alumni_certificate_reminder` and stores `certificate_source=grandfathered` with no file.
+That source is not reused as a certificate; the next booking needs a new proof or a stored file.
+`form-schema` still marks `certificate` required. The portal must not block grandfathered accounts on that
+flag; it shows a non-blocking reminder and sends the proof instead.
+
+Enable the client and check the secret match without printing either secret:
+
+```bash
+php artisan material-requests:alumni-certificate-exempt
+php artisan material-requests:alumni-certificate-exempt "Learning Portal" --enable
+```
+
+`prefill_secret_matches_api_key=yes` means proofs signed with `LIA_MEDIA_API_KEY` will verify. `no` means the
+stored prefill secret and the API key have diverged; set `prefill_secret` to that same API key on the server
+(do not commit or log it). The portal payload does not change.
 
 ### `GET /{reference}`
 

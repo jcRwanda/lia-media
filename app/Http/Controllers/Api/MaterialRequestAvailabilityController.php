@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\EquipmentItem;
 use App\Services\EquipmentAvailabilityService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
@@ -24,10 +25,10 @@ class MaterialRequestAvailabilityController extends Controller
         ]);
 
         $from = isset($data['from'])
-            ? CarbonImmutable::parse($data['from'])->startOfDay()
-            : CarbonImmutable::today();
+            ? $this->availability->bookingDay($data['from'])
+            : CarbonImmutable::now(EquipmentAvailabilityService::TIMEZONE)->startOfDay();
         $to = isset($data['to'])
-            ? CarbonImmutable::parse($data['to'])->startOfDay()
+            ? $this->availability->bookingDay($data['to'])
             : $from->addDays(90);
 
         if ((int) $from->diffInDays($to) > 366) {
@@ -41,7 +42,7 @@ class MaterialRequestAvailabilityController extends Controller
         if (isset($data['item_ids'])) {
             $itemIds = array_values(array_map('intval', $data['item_ids']));
             if (($data['type'] ?? null) === 'trainee') {
-                $itemIds = \App\Models\EquipmentItem::query()
+                $itemIds = EquipmentItem::query()
                     ->whereIn('id', $itemIds)
                     ->where('allowed_for_trainees', true)
                     ->pluck('id')
@@ -49,7 +50,7 @@ class MaterialRequestAvailabilityController extends Controller
                     ->all();
             }
         } elseif (($data['type'] ?? null) === 'trainee') {
-            $itemIds = \App\Models\EquipmentItem::query()
+            $itemIds = EquipmentItem::query()
                 ->where('allowed_for_trainees', true)
                 ->pluck('id')
                 ->map(fn ($id) => (int) $id)

@@ -11,12 +11,15 @@ use App\Models\EquipmentCheck;
 use App\Models\MaterialRequest;
 use App\Models\MaterialRequestFinalWork;
 use App\Models\MaterialRequestItem;
+use App\Services\EquipmentAvailabilityService;
 use App\Services\MaterialRequestAuditService;
 use App\Services\MaterialRequestDecisionService;
 use App\Services\MaterialRequestFormSchemaService;
-use App\Services\MaterialRequestService;
 use App\Services\MaterialRequestPickupItemService;
+use App\Services\MaterialRequestService;
 use App\Services\MaterialRequestWebhookService;
+use App\Services\StorekeeperReminderService;
+use App\Support\BookingSchedule;
 use App\Support\ImageNormalizer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -35,6 +38,9 @@ class MaterialRequestController extends Controller
         private MaterialRequestWebhookService $webhooks,
         private MaterialRequestDecisionService $decisions,
         private MaterialRequestPickupItemService $pickupItems,
+        private EquipmentAvailabilityService $availability,
+        private BookingSchedule $schedule,
+        private StorekeeperReminderService $reminders,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -183,8 +189,60 @@ class MaterialRequestController extends Controller
         $payload['status_history'] = $materialRequest->statusHistories->map(fn ($h) => $h->present())->values();
         $payload['decision'] = $this->decisions->decision($materialRequest);
         $payload['form_answers'] = $this->formAnswers($materialRequest);
+        $payload['booking_overlap'] = $this->bookingOverlapFor($materialRequest);
+        $payload['schedule'] = $this->schedule->presentRequest($materialRequest);
 
         return response()->json(['request' => $payload]);
+    }
+
+    public function storekeeperReminder(Request $request, MaterialRequest $materialRequest): JsonResponse
+    {
+        if (! $request->user()?->canDo('material-requests.manage')) {
+            abort(403);
+        }
+        $purpose = (string) $request->query('purpose', 'pickup');
+        if (! in_array($purpose, ['pickup', 'return', 'confirm_return'], true)) {
+            return response()->json(['message' => 'Validation failed', 'errors' => ['purpose' => ['Choose pickup, return, or confirm_return.']]], 422);
+        }
+
+        return response()->json($this->reminders->forBooking($materialRequest, $purpose));
+    }
+
+    public function storekeeperReminders(Request $request): JsonResponse
+    {
+        if (! $request->user()?->canDo('material-requests.manage')) {
+            abort(403);
+        }
+        $bookings = MaterialRequest::query()
+            ->with('items.equipmentItem')
+            ->whereIn('status', ['approved', 'issued', 'returned'])
+            ->orderBy('return_by')
+            ->limit(30)
+            ->get();
+
+        return response()->json($this->reminders->outstanding($bookings));
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function bookingOverlapFor(MaterialRequest $materialRequest): ?array
+    {
+        if (! $materialRequest->needed_from || ! $materialRequest->return_by || $materialRequest->items->isEmpty()) {
+            return null;
+        }
+        if (! in_array($materialRequest->status, EquipmentAvailabilityService::ACTIVE_OVERLAP_STATUSES, true)) {
+            return null;
+        }
+
+        $lines = $materialRequest->items->map(fn ($item) => [
+            'equipment_item_id' => (int) $item->equipment_item_id,
+            'qty' => (int) (($item->qty_approved ?? $item->qty_requested) ?: 1),
+        ])->all();
+
+        [$start, $end] = $this->schedule->rangeFor($materialRequest);
+
+        return $this->availability->bookingOverlap($lines, $start, $end, $materialRequest->id);
     }
 
     public function approve(Request $request, MaterialRequest $materialRequest): JsonResponse
@@ -210,6 +268,31 @@ class MaterialRequestController extends Controller
 
         DB::transaction(function () use ($request, $materialRequest, $validator) {
             $user = $request->user();
+            $materialRequest->loadMissing('items');
+            $approvedQty = collect($validator->validated()['items'] ?? [])->keyBy('id');
+            $lines = [];
+            foreach ($materialRequest->items as $item) {
+                $qty = $approvedQty->has($item->id)
+                    ? (int) $approvedQty[$item->id]['qty_approved']
+                    : (int) $item->qty_requested;
+                if ($qty <= 0) {
+                    continue;
+                }
+                $lines[] = ['equipment_item_id' => (int) $item->equipment_item_id, 'qty' => $qty];
+            }
+            if ($lines !== [] && $materialRequest->needed_from && $materialRequest->return_by) {
+                [$start, $end] = $this->schedule->rangeFor($materialRequest);
+                $this->availability->assertCanBook(
+                    $lines,
+                    $this->availability->bookingDay($materialRequest->needed_from),
+                    $this->availability->bookingDay($materialRequest->return_by),
+                    $materialRequest->id,
+                    enforceWindowRules: false,
+                    lockItems: true,
+                    windowStart: $start,
+                    windowEnd: $end,
+                );
+            }
             $materialRequest->update([
                 'status' => 'approved',
                 'review_note' => $validator->validated()['note'] ?? null,
@@ -343,7 +426,6 @@ class MaterialRequestController extends Controller
         return response()->json(['request' => $materialRequest->load('items.equipmentItem')]);
     }
 
-
     public function pickupCatalog(Request $request, MaterialRequest $materialRequest): JsonResponse
     {
         if (! $request->user()?->canDo('material-requests.issue')) {
@@ -409,6 +491,35 @@ class MaterialRequestController extends Controller
         ], 201);
     }
 
+    public function replacePickupItem(Request $request, MaterialRequest $materialRequest, MaterialRequestItem $item): JsonResponse
+    {
+        if (! $request->user()?->canDo('material-requests.issue')) {
+            abort(403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'equipment_item_id' => ['required', 'integer', 'exists:equipment_items,id'],
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['message' => 'Validation failed', 'errors' => $validator->errors()], 422);
+        }
+
+        try {
+            $line = $this->pickupItems->replace(
+                $materialRequest,
+                $request->user(),
+                $item,
+                (int) $validator->validated()['equipment_item_id'],
+            );
+        } catch (ValidationException $e) {
+            return response()->json(['message' => 'Validation failed', 'errors' => $e->errors()], 422);
+        }
+
+        return response()->json([
+            'item' => $this->presentPickupLine($line),
+        ]);
+    }
+
     public function removePickupItem(Request $request, MaterialRequest $materialRequest, MaterialRequestItem $item): JsonResponse
     {
         if (! $request->user()?->canDo('material-requests.issue')) {
@@ -465,7 +576,7 @@ class MaterialRequestController extends Controller
             abort(403);
         }
 
-        if (! in_array($materialRequest->status, ['approved'], true)) {
+        if (! in_array($materialRequest->status, ['approved', 'issued'], true)) {
             return response()->json(['message' => 'Invalid state transition'], 422);
         }
 
@@ -862,30 +973,6 @@ class MaterialRequestController extends Controller
 
     private function whatsappUrl(MaterialRequest $materialRequest): ?string
     {
-        $phone = preg_replace('/[^0-9]/', '', (string) $materialRequest->phone);
-        if (! $phone) {
-            return null;
-        }
-        if (str_starts_with($phone, '00')) {
-            $phone = substr($phone, 2);
-        }
-        if (str_starts_with($phone, '0')) {
-            $phone = '250'.substr($phone, 1);
-        } elseif (! str_starts_with($phone, '250')) {
-            $phone = '250'.$phone;
-        }
-
-        $items = $materialRequest->items
-            ->map(function ($item) {
-                $name = $item->equipmentItem?->name ?? 'Item';
-                $qty = $item->qty_approved ?? $item->qty_issued ?? $item->qty_requested;
-
-                return $qty ? "- {$name} x{$qty}" : "- {$name}";
-            })
-            ->join("\n");
-
-        $text = "Booking summary\nReference: {$materialRequest->reference_code}\nName: {$materialRequest->full_name}\nItems:\n{$items}\nPickup: ".($materialRequest->needed_from?->toDateString() ?? '')."\nReturn: ".($materialRequest->return_by?->toDateString() ?? '')."\nPickup location: {$this->pickupLocation($materialRequest)}";
-
-        return 'https://wa.me/'.$phone.'?text='.rawurlencode($text);
+        return null;
     }
 }
