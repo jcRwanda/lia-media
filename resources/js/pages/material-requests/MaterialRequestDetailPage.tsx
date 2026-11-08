@@ -142,6 +142,12 @@ export default function MaterialRequestDetailPage() {
                     <div className="font-medium">Dates</div>
                     <div>Pick-up: {data.needed_from}</div>
                     <div>Return: {data.return_by}</div>
+                    {data.booking_overlap?.summary ? (
+                        <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-amber-950">
+                            <div className="font-medium">{data.booking_overlap.summary.en}</div>
+                            <div className="text-xs">{data.booking_overlap.summary.kn}</div>
+                        </div>
+                    ) : null}
                     <div>Summary: {data.purpose_project_description}</div>
                     <div>Location: {[data.project_cell, data.project_sector, data.project_district, data.project_province].filter(Boolean).join(', ') || '—'}</div>
                 </div>

@@ -62,6 +62,9 @@
         const d = r.decision || {};
         let html = `<div class="flex items-center justify-between"><div><div class="text-xs font-medium uppercase tracking-wide text-gray-500">Reference</div><div class="font-mono text-lg font-semibold">${esc(r.reference_code)}</div></div><span class="px-3 py-1 rounded-full text-sm font-semibold ${cls}">${esc(label)}</span></div>
             <div class="text-sm text-gray-600 mt-2">${esc(r.full_name)} · ${esc(r.needed_from)} → ${esc(r.return_by)}</div>`;
+        if (r.booking_overlap && r.booking_overlap.summary) {
+            html += `<div class="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"><b>${esc(r.booking_overlap.summary.en)}</b><div class="mt-1">${esc(r.booking_overlap.summary.kn)}</div></div>`;
+        }
         if (r.review_note) {
             html += `<div class="mt-3 p-3 rounded-xl border-l-4 border-lia-500 bg-lia-50 text-sm"><b>${r.status === 'rejected' ? 'Reason' : 'Note from LIA'}:</b> ${esc(r.review_note)}</div>`;
         }

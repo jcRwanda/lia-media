@@ -61,6 +61,26 @@ class MaterialRequestPlatformController extends Controller
                     'liaKey' => ['type' => 'apiKey', 'in' => 'header', 'name' => 'X-LIA-Key'],
                 ],
                 'schemas' => [
+                    'BookingOverlap' => [
+                        'type' => 'object',
+                        'description' => 'Same-equipment overlap queue. level pending or not_guaranteed on success. A fourth active overlap is a 422 and is not returned here.',
+                        'properties' => [
+                            'timezone' => ['type' => 'string', 'example' => 'Africa/Kigali'],
+                            'max_active_requests' => ['type' => 'integer', 'example' => 3],
+                            'date_semantics' => ['type' => 'string', 'example' => 'inclusive_kigali_calendar_dates'],
+                            'level' => ['type' => 'string', 'enum' => ['pending', 'not_guaranteed']],
+                            'summary' => ['type' => 'object', 'properties' => ['en' => ['type' => 'string'], 'kn' => ['type' => 'string']]],
+                            'warnings' => ['type' => 'array', 'items' => ['type' => 'object', 'properties' => [
+                                'equipment_item_id' => ['type' => 'integer'],
+                                'equipment_name' => ['type' => 'string'],
+                                'active_requests_before' => ['type' => 'integer'],
+                                'position' => ['type' => 'integer'],
+                                'level' => ['type' => 'string'],
+                                'guaranteed' => ['type' => 'boolean'],
+                                'message' => ['type' => 'object'],
+                            ]]],
+                        ],
+                    ],
                     'ValidationError' => [
                         'type' => 'object',
                         'properties' => [
@@ -223,6 +243,7 @@ class MaterialRequestPlatformController extends Controller
                                         'reference_code' => ['type' => 'string'],
                                         'status' => ['type' => 'string'],
                                         'alumni_certificate_reminder' => ['type' => 'string', 'description' => 'Present only when a grandfather proof was accepted. It does not block the booking.'],
+                                        'booking_overlap' => ['$ref' => '#/components/schemas/BookingOverlap'],
                                     ],
                                 ]]],
                             ],

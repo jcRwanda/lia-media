@@ -22,7 +22,6 @@ use App\Services\MaterialRequestWebhookService;
 use App\Storage\ObjectStorage;
 use App\Storage\R2ObjectStorage;
 use App\Support\ApiValidationFailure;
-use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -240,8 +239,8 @@ class MaterialRequestPublicController extends Controller
             'equipment_item_id' => (int) $item['equipment_item_id'],
             'qty' => (int) $item['qty'],
         ], $validated['items']);
-        $neededFrom = CarbonImmutable::parse($validated['needed_from'])->startOfDay();
-        $returnBy = CarbonImmutable::parse($validated['return_by'])->startOfDay();
+        $neededFrom = $this->availability->bookingDay($validated['needed_from']);
+        $returnBy = $this->availability->bookingDay($validated['return_by']);
 
         if ($requesterType === 'trainee') {
             $itemIds = array_column($bookingLines, 'equipment_item_id');
@@ -292,6 +291,7 @@ class MaterialRequestPublicController extends Controller
         }
 
         $this->availability->assertCanBook($bookingLines, $neededFrom, $returnBy);
+        $this->availability->assertBookingOverlap($bookingLines, $neededFrom, $returnBy);
 
         $reusedRequest = null;
         if ($requesterType !== 'trainee') {
@@ -333,8 +333,10 @@ class MaterialRequestPublicController extends Controller
         $cohort = ! empty($validated['cohort_id']) ? Cohort::query()->find($validated['cohort_id']) : null;
         $source = $apiClient?->name ?? 'Direct/Hosted form';
 
-        $materialRequest = DB::transaction(function () use ($validated, $bookingLines, $neededFrom, $returnBy, $idDocument, $signature, $cohort, $apiClient, $source, $certificate) {
+        $bookingOverlap = null;
+        $materialRequest = DB::transaction(function () use ($validated, $bookingLines, $neededFrom, $returnBy, $idDocument, $signature, $cohort, $apiClient, $source, $certificate, &$bookingOverlap) {
             $this->availability->assertCanBook($bookingLines, $neededFrom, $returnBy, lockItems: true);
+            $bookingOverlap = $this->availability->assertBookingOverlap($bookingLines, $neededFrom, $returnBy, null, true);
 
             $materialRequest = MaterialRequest::query()->create([
                 'api_client_id' => $apiClient?->id,
@@ -432,6 +434,9 @@ class MaterialRequestPublicController extends Controller
         if (($certificate['source'] ?? null) === AlumniCertificateExemptVerifier::SOURCE) {
             $body['alumni_certificate_reminder'] = 'Booking accepted. A graduation certificate is not required for this grandfathered alumni account and does not block the request.';
         }
+        if (is_array($bookingOverlap)) {
+            $body['booking_overlap'] = $bookingOverlap;
+        }
 
         return response()->json($body, 201);
     }
@@ -481,11 +486,14 @@ class MaterialRequestPublicController extends Controller
             }
         }
         $bookingLines = collect($lines)->map(fn ($q, $id) => ['equipment_item_id' => $id, 'qty' => $q])->values()->all();
-        $from = CarbonImmutable::parse($validated['needed_from'])->startOfDay();
-        $to = CarbonImmutable::parse($validated['return_by'])->startOfDay();
+        $from = $this->availability->bookingDay($validated['needed_from']);
+        $to = $this->availability->bookingDay($validated['return_by']);
         $this->availability->assertCanBook($bookingLines, $from, $to, $mr->id);
+        $this->availability->assertBookingOverlap($bookingLines, $from, $to, $mr->id);
 
-        DB::transaction(function () use ($mr, $validated, $bookingLines) {
+        DB::transaction(function () use ($mr, $validated, $bookingLines, $from, $to) {
+            $this->availability->assertCanBook($bookingLines, $from, $to, $mr->id, lockItems: true);
+            $this->availability->assertBookingOverlap($bookingLines, $from, $to, $mr->id, true);
             $mr->update(array_filter([
                 'needed_from' => $validated['needed_from'],
                 'return_by' => $validated['return_by'],
@@ -542,7 +550,33 @@ class MaterialRequestPublicController extends Controller
                 'status' => $item->status,
                 'added_at_pickup' => (bool) $item->added_at_pickup,
             ])->values(),
+            'booking_overlap' => $this->bookingOverlapFor($mr),
         ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function bookingOverlapFor(MaterialRequest $mr): ?array
+    {
+        if (! $mr->needed_from || ! $mr->return_by || $mr->items->isEmpty()) {
+            return null;
+        }
+        if (! in_array($mr->status, EquipmentAvailabilityService::ACTIVE_OVERLAP_STATUSES, true)) {
+            return null;
+        }
+
+        $lines = $mr->items->map(fn ($item) => [
+            'equipment_item_id' => (int) $item->equipment_item_id,
+            'qty' => (int) ($item->qty_approved ?? $item->qty_requested ?: 1),
+        ])->all();
+
+        return $this->availability->bookingOverlap(
+            $lines,
+            $this->availability->bookingDay($mr->needed_from),
+            $this->availability->bookingDay($mr->return_by),
+            $mr->id,
+        );
     }
 
     /**

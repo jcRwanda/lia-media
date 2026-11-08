@@ -878,7 +878,10 @@
             signaturePad.resize();
             updateTypeUi();
             form.classList.add('hidden'); $('lia-steps').classList.add('hidden'); $('success-screen').classList.remove('hidden'); window.scrollTo({ top: 0, behavior: 'smooth' });
-            show('success', 'Request submitted. / Ubusabe bwoherejwe. Reference: ' + (data.reference_code || ''));
+            const overlap = data.booking_overlap && data.booking_overlap.summary
+                ? '\n' + data.booking_overlap.summary.en + ' / ' + data.booking_overlap.summary.kn
+                : '';
+            show('success', 'Request submitted. / Ubusabe bwoherejwe. Reference: ' + (data.reference_code || '') + overlap);
             if (data.status_url) { const box = document.createElement('a'); box.href = data.status_url; box.target = '_blank'; box.className = 'block mt-2 underline text-sm'; box.textContent = 'Track your request / Kurikirana ubusabe bwawe'; $('success').appendChild(box); }
         } catch (e) {
             genericError('The request could not be submitted. Please check your connection and try again.');

@@ -11,6 +11,7 @@ use App\Models\EquipmentCheck;
 use App\Models\MaterialRequest;
 use App\Models\MaterialRequestFinalWork;
 use App\Models\MaterialRequestItem;
+use App\Services\EquipmentAvailabilityService;
 use App\Services\MaterialRequestAuditService;
 use App\Services\MaterialRequestDecisionService;
 use App\Services\MaterialRequestFormSchemaService;
@@ -35,6 +36,7 @@ class MaterialRequestController extends Controller
         private MaterialRequestWebhookService $webhooks,
         private MaterialRequestDecisionService $decisions,
         private MaterialRequestPickupItemService $pickupItems,
+        private EquipmentAvailabilityService $availability,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -183,8 +185,34 @@ class MaterialRequestController extends Controller
         $payload['status_history'] = $materialRequest->statusHistories->map(fn ($h) => $h->present())->values();
         $payload['decision'] = $this->decisions->decision($materialRequest);
         $payload['form_answers'] = $this->formAnswers($materialRequest);
+        $payload['booking_overlap'] = $this->bookingOverlapFor($materialRequest);
 
         return response()->json(['request' => $payload]);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function bookingOverlapFor(MaterialRequest $materialRequest): ?array
+    {
+        if (! $materialRequest->needed_from || ! $materialRequest->return_by || $materialRequest->items->isEmpty()) {
+            return null;
+        }
+        if (! in_array($materialRequest->status, EquipmentAvailabilityService::ACTIVE_OVERLAP_STATUSES, true)) {
+            return null;
+        }
+
+        $lines = $materialRequest->items->map(fn ($item) => [
+            'equipment_item_id' => (int) $item->equipment_item_id,
+            'qty' => (int) (($item->qty_approved ?? $item->qty_requested) ?: 1),
+        ])->all();
+
+        return $this->availability->bookingOverlap(
+            $lines,
+            $this->availability->bookingDay($materialRequest->needed_from),
+            $this->availability->bookingDay($materialRequest->return_by),
+            $materialRequest->id,
+        );
     }
 
     public function approve(Request $request, MaterialRequest $materialRequest): JsonResponse
@@ -210,6 +238,28 @@ class MaterialRequestController extends Controller
 
         DB::transaction(function () use ($request, $materialRequest, $validator) {
             $user = $request->user();
+            $materialRequest->loadMissing('items');
+            $approvedQty = collect($validator->validated()['items'] ?? [])->keyBy('id');
+            $lines = [];
+            foreach ($materialRequest->items as $item) {
+                $qty = $approvedQty->has($item->id)
+                    ? (int) $approvedQty[$item->id]['qty_approved']
+                    : (int) $item->qty_requested;
+                if ($qty <= 0) {
+                    continue;
+                }
+                $lines[] = ['equipment_item_id' => (int) $item->equipment_item_id, 'qty' => $qty];
+            }
+            if ($lines !== [] && $materialRequest->needed_from && $materialRequest->return_by) {
+                $this->availability->assertCanBook(
+                    $lines,
+                    $this->availability->bookingDay($materialRequest->needed_from),
+                    $this->availability->bookingDay($materialRequest->return_by),
+                    $materialRequest->id,
+                    enforceWindowRules: false,
+                    lockItems: true,
+                );
+            }
             $materialRequest->update([
                 'status' => 'approved',
                 'review_note' => $validator->validated()['note'] ?? null,

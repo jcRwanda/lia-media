@@ -259,6 +259,13 @@ class MaterialRequestPickupItemService
                 enforceWindowRules: false,
                 lockItems: true,
             );
+            $this->availability->assertBookingOverlap(
+                [['equipment_item_id' => $replacement->id, 'qty' => (int) ($line->qty_approved ?? $line->qty_requested)]],
+                $this->from($request),
+                $this->to($request),
+                $request->id,
+                true,
+            );
 
             $line->update(['equipment_item_id' => $replacement->id]);
             $historyNote = 'Replaced at pickup by '.$actor->name.': '.$fromName.' → '.$replacement->name;

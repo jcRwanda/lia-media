@@ -44,6 +44,43 @@ Errors use HTTP status codes and this shape:
 ```
 
 `401` means a missing/unknown/disabled key. `403` means the key is valid but the browser origin does not match.
+
+### Overlapping requests
+
+Dates are inclusive Kigali (`Africa/Kigali`) calendar days. A booking that ends on a day overlaps one that starts that same day. The next day does not overlap.
+
+Active requests are `submitted`, `changes_requested`, `approved`, and `issued`. Rejected, returned, and closed requests are ignored. Distinct bookings are counted, not duplicate lines on one request.
+
+Up to 3 active requests may cover the same equipment on overlapping dates. The 2nd and 3rd are stored and the response includes `booking_overlap` with `level` `not_guaranteed`. The 4th is rejected with `422` and no row is created. Physical stock still applies to approval and issue: a second approval is refused when approved or issued quantity already uses the stock. Issuing an already approved reservation is not blocked by other pending requests.
+
+```json
+{
+  "booking_overlap": {
+    "timezone": "Africa/Kigali",
+    "max_active_requests": 3,
+    "date_semantics": "inclusive_kigali_calendar_dates",
+    "level": "pending",
+    "summary": {
+      "en": "Your booking is pending a decision and is not confirmed yet.",
+      "kn": "Ubusabe bwawe burategereje icyemezo kandi ntiburabonezwa."
+    },
+    "warnings": [
+      {
+        "equipment_item_id": 12,
+        "equipment_name": "Canon R body",
+        "active_requests_before": 0,
+        "position": 1,
+        "level": "pending",
+        "guaranteed": false,
+        "line_index": 0,
+        "message": { "en": "…", "kn": "…" }
+      }
+    ]
+  }
+}
+```
+
+`level` is `pending`, `not_guaranteed`, or, on the error path only, the validation message. Availability `daily` adds `pending_request_count` and `active_request_count`. `available_qty` still counts approved and issued quantity only.
 `422` covers validation, booking rules, blocked dates and stock conflicts. Each API validation failure is logged as
 `API validation failed.` with `correlation_id`, HTTP status, route, and the failing field names. Submitted values,
 files, headers, and the request body are not written to that log. Quote `correlation_id` when asking which field failed.
